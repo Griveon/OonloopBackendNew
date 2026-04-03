@@ -9,13 +9,11 @@ export class ProviderConnectionController {
         this.service = new ProviderConnectionService();
     }
 
-    // ✅ SAME helper as VendorController
     private getParam(param: string | string[] | undefined): string | null {
         const id = Array.isArray(param) ? param[0] : param;
         return id || null;
     }
 
-    // ✅ CREATE
     create = async (req: Request, res: Response) => {
         try {
             const data = req.body;
@@ -32,18 +30,9 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ GET ALL
     getAll = async (req: Request, res: Response) => {
         try {
-            const storeId = this.getParam(req.query.storeId as string);
-
-            if (!storeId) {
-                return res
-                    .status(400)
-                    .json(ResponseUtil.badRequest("storeId is required"));
-            }
-
-            const result = await this.service.getAll(storeId);
+            const result = await this.service.getAll();
 
             return res
                 .status(200)
@@ -55,7 +44,6 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ GET BY ID
     getById = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -78,7 +66,6 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ UPDATE
     update = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -103,7 +90,6 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ DELETE (SOFT DELETE)
     delete = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -126,7 +112,6 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ ACTIVATE
     activate = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -149,7 +134,6 @@ export class ProviderConnectionController {
         }
     };
 
-    // ✅ DEACTIVATE
     deactivate = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);

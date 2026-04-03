@@ -1,9 +1,6 @@
 import { z } from "zod";
 
 export const createProviderConnectionSchema = z.object({
-    storeId: z
-        .string()
-        .min(1, "Store ID is required"),
 
     provider: z.enum([
         "razorpay",

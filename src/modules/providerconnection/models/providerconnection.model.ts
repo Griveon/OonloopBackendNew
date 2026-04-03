@@ -93,7 +93,12 @@ const ProviderConnectionSchema: Schema<IProviderConnectionDocument> =
         { timestamps: true }
     );
 
-const ENCRYPTION_KEY = process.env.INTEGRATION_SECRET_KEY!;
+const rawKey = process.env.INTEGRATION_SECRET_KEY!;
+
+const ENCRYPTION_KEY: any = crypto
+    .createHash("sha256")
+    .update(rawKey)
+    .digest();
 
 ProviderConnectionSchema.methods.encryptValue = function (plainText: string) {
     const iv = crypto.randomBytes(16);

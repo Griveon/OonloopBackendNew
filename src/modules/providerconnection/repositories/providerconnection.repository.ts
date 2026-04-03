@@ -7,9 +7,8 @@ export class ProviderConnectionRepository {
         return await ProviderConnectionModel.create(data);
     }
 
-    async findAll(storeId: string) {
+    async findAll() {
         return await ProviderConnectionModel.find({
-            storeId,
             isDeleted: false,
         }).sort({ priority: 1 });
     }

@@ -8,6 +8,7 @@ import workspacePermissionRoutes from "../modules/workspacepermission/routes/wor
 import workspaceRoutes from "../modules/workspace/routes/workspace.routes.js";
 import workspaceSubscriptionRoutes from "../modules/workspacesubscription/routes/workspacesubscription.routes.js";
 import vendorProfileRoutes from "../modules/vendorprofile/routes/vendorprofile.routes.js";
+import providerConnectionRoutes from "../modules/providerconnection/routes/providerconnection.routes.js";
 
 userAuthRoutes
 
@@ -35,6 +36,9 @@ router.use("/workspaceroles", workspacePermissionRoutes);
 router.use("/workspaces", workspaceRoutes);
 
 router.use("/workspacessubscription", workspaceSubscriptionRoutes);
+
+router.use("/providerconnection", providerConnectionRoutes);
+
 
 
 export default router;

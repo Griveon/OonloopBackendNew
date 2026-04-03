@@ -10,7 +10,7 @@ export class ProviderConnectionService {
     }
 
     async createProviderConnection(data: any) {
-        // 🔍 Prevent duplicate provider per env
+
         const existing = await this.repo.findByProvider(
             data.storeId,
             data.provider,
@@ -23,7 +23,6 @@ export class ProviderConnectionService {
             );
         }
 
-        // 🔐 Encrypt credentials
         const tempDoc = new ProviderConnectionModel();
         const encryptedCredentials: any = {};
 
@@ -31,10 +30,10 @@ export class ProviderConnectionService {
             for (const key in data.credentials) {
                 encryptedCredentials[key] =
                     tempDoc.encryptValue(data.credentials[key]);
+                    console.log(`Encrypted ${key}:`, encryptedCredentials[key]);
             }
         }
 
-        // 🔐 Encrypt webhook secret
         let webhook = data.webhook;
         if (webhook?.secret) {
             webhook.secret = tempDoc.encryptValue(webhook.secret);
@@ -47,8 +46,8 @@ export class ProviderConnectionService {
         });
     }
 
-    async getAll(storeId: string) {
-        return await this.repo.findAll(storeId);
+    async getAll() {
+        return await this.repo.findAll();
     }
 
     async getById(id: string) {
