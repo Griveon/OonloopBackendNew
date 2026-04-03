@@ -14,6 +14,7 @@ import paymentTransactionsRoutes from "../modules/paymenttransaction/routes/paym
 import vendorSubscriptionRoutes from "../modules/vendorsubscription/routes/vendorsubscription.routes.js";
 import platformCommissionRoutes from "../modules/platformcommisison/routes/platformcommission.routes.js";
 import vendorCategoryRoutes from "../modules/vendorcategory/routes/vendorcategory.routes.js";
+import productCategoryRoutes from "../modules/productcategories/routes/productcategory.routes.js";
 
 userAuthRoutes
 
@@ -53,6 +54,8 @@ router.use("/vendorsubscription", vendorSubscriptionRoutes);
 router.use("/platformcommission", platformCommissionRoutes);
 
 router.use("/vendorcategory", vendorCategoryRoutes);
+
+router.use("/productcategory", productCategoryRoutes);
 
 
 
