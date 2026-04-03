@@ -57,7 +57,6 @@ export interface IProviderConnectionMethods {
     decryptValue(data: IEncryptedValue): string;
 }
 
-// ✅ 🔥 FIX IS HERE
 export interface IProviderConnectionDocument
     extends IProviderConnection,
     Document,

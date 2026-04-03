@@ -9,6 +9,7 @@ import workspaceRoutes from "../modules/workspace/routes/workspace.routes.js";
 import workspaceSubscriptionRoutes from "../modules/workspacesubscription/routes/workspacesubscription.routes.js";
 import vendorProfileRoutes from "../modules/vendorprofile/routes/vendorprofile.routes.js";
 import providerConnectionRoutes from "../modules/providerconnection/routes/providerconnection.routes.js";
+import paymentMethodRoutes from "../modules/paymentmethod/routes/paymentmethod.routes.js";
 
 userAuthRoutes
 
@@ -38,6 +39,8 @@ router.use("/workspaces", workspaceRoutes);
 router.use("/workspacessubscription", workspaceSubscriptionRoutes);
 
 router.use("/providerconnection", providerConnectionRoutes);
+
+router.use("/paymentmethod", paymentMethodRoutes);
 
 
 
