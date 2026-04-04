@@ -18,6 +18,7 @@ import productCategoryRoutes from "../modules/productcategories/routes/productca
 import brandRoutes from "../modules/brand/routes/brand.routes.js";
 import productVariantRoutes from "../modules/productvariants/routes/productvariant.routes.js";
 import ribbonRoutes from "../modules/ribbons/routes/ribbon.routes.js";
+import gstruleRoutes from "../modules/gstrule/routes/gstrule.routes.js";
 
 userAuthRoutes
 
@@ -65,6 +66,8 @@ router.use("/brand", brandRoutes);
 router.use("/productvariant", productVariantRoutes);
 
 router.use("/ribbon", ribbonRoutes);
+
+router.use("/gstrule", gstruleRoutes);
 
 
 
