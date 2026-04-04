@@ -17,6 +17,7 @@ import vendorCategoryRoutes from "../modules/vendorcategory/routes/vendorcategor
 import productCategoryRoutes from "../modules/productcategories/routes/productcategory.routes.js";
 import brandRoutes from "../modules/brand/routes/brand.routes.js";
 import productVariantRoutes from "../modules/productvariants/routes/productvariant.routes.js";
+import ribbonRoutes from "../modules/ribbons/routes/ribbon.routes.js";
 
 userAuthRoutes
 
@@ -62,6 +63,8 @@ router.use("/productcategory", productCategoryRoutes);
 router.use("/brand", brandRoutes);
 
 router.use("/productvariant", productVariantRoutes);
+
+router.use("/ribbon", ribbonRoutes);
 
 
 
