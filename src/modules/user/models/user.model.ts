@@ -59,6 +59,14 @@ const UserSchema: Schema<IUserDocument> = new Schema(
             type: String,
         },
 
+        pin: {
+            type: String,
+            required: false,
+            trim: true,
+            minlength: 6,  
+            maxlength: 6,  
+        },
+
         role: {
             type: String,
             enum: ["user", "vendor", "driver"],

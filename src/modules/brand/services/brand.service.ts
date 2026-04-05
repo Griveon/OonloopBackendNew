@@ -13,8 +13,8 @@ export class BrandService {
         return await this.repo.create(data);
     }
 
-    async getAll() {
-        return await this.repo.findAll();
+    async getAll(params: { page: number; limit: number; search?: string }) {
+        return await this.repo.findAll(params);
     }
 
     async getById(id: string) {

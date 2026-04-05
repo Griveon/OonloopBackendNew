@@ -10,7 +10,7 @@ export class UserRepository {
     async findByEmail(email: string) {
         return await UserModel.findOne({ email });
     }
-   
+
     async findByMobileNumber(mobileNumber: string) {
         return await UserModel.findOne({ mobileNumber });
     }
@@ -33,6 +33,14 @@ export class UserRepository {
             { password },
             { new: true }
         );
+    }
+
+    async updateProfile(userId: string, data: Partial<IUser>) {
+        return await UserModel.findByIdAndUpdate(
+            userId,
+            { $set: data },
+            { new: true, runValidators: true }
+        ).select("-password");
     }
 
 }

@@ -12,17 +12,16 @@ export class UserLoginController {
 
     login = async (req: Request, res: Response) => {
         try {
+            const { identifier, pin } = req.body;
+            console.log(identifier, pin)
 
-            const { email, password } = req.body;
-
-            const data = await this.userService.login(email, password);
+            const data = await this.userService.login(identifier, pin);
 
             return res
                 .status(200)
                 .json(ResponseUtil.success("Login successful", data));
 
         } catch (error: any) {
-
             return res
                 .status(401)
                 .json(ResponseUtil.unauthorized(error.message));

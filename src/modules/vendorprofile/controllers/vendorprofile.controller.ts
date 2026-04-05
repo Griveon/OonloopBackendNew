@@ -68,12 +68,22 @@ export class VendorProfileController {
     getVendorById = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
-            if (!id) return res.status(400).json(ResponseUtil.badRequest("Vendor ID is required"));
 
-            const vendor = await this.vendorService.getVendorById(id);
-            return res.status(200).json(ResponseUtil.success("Vendor fetched successfully", vendor));
+            if (!id) {
+                return res.status(400).json(
+                    ResponseUtil.badRequest("Vendor ID is required")
+                );
+            }
+
+            const data = await this.vendorService.getVendorById(id);
+
+            return res.status(200).json(
+                ResponseUtil.success("Vendor fetched successfully", data)
+            );
         } catch (error: any) {
-            return res.status(404).json(ResponseUtil.notFound(error.message));
+            return res.status(404).json(
+                ResponseUtil.notFound(error.message)
+            );
         }
     };
 
@@ -141,4 +151,17 @@ export class VendorProfileController {
             return res.status(404).json(ResponseUtil.notFound(error.message));
         }
     };
+
+    checkProfileCompleted = async (req: Request, res: Response) => {
+        try {
+            const id = this.getParam(req.params.id);
+            if (!id) return res.status(400).json(ResponseUtil.badRequest("Vendor ID is required"));
+
+            const result = await this.vendorService.isProfileCompleted(id);
+            return res.status(200).json(ResponseUtil.success(result.message, result));
+        } catch (error: any) {
+            return res.status(500).json(ResponseUtil.serverError(error.message));
+        }
+    };
+
 }

@@ -35,21 +35,23 @@ export const signupSchema = z.object({
 
     gender: z
         .enum(["male", "female", "other"])
-        .optional()
+        .optional(),
+
+    pin: z.string()
 });
 
 
 /**
  * Login Validation
  */
-export const loginSchema = z.object({
-    email: z
-        .email("Invalid email address"),
+// export const loginSchema = z.object({
+//     email: z
+//         .email("Invalid email address"),
 
-    password: z
-        .string()
-        .min(6)
-});
+//     password: z
+//         .string()
+//         .min(6)
+// });
 
 
 /**

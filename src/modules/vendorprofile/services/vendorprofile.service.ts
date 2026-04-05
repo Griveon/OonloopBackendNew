@@ -2,12 +2,15 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import type { IVendorDocument } from "../interfaces/vendorprofile.interface.js";
 import { VendorProfileRepository } from "../repository/vendorprofile.repository.js";
+import { UserRepository } from "../../user/repositories/user.repository.js";
 
 export class VendorProfileService {
     private vendorRepo: VendorProfileRepository;
+    private userRepository: UserRepository;
 
     constructor() {
         this.vendorRepo = new VendorProfileRepository();
+        this.userRepository = new UserRepository();
     }
 
     async createVendor(data: Partial<IVendorDocument>) {
@@ -30,9 +33,18 @@ export class VendorProfileService {
     }
 
     async getVendorById(id: string) {
+        console.log(id);
+
         const vendor = await this.vendorRepo.findById(id);
+        const user = await this.userRepository.findById(id);
+
         if (!vendor) throw new Error("Vendor not found");
-        return vendor;
+        if (!user) throw new Error("User not found");
+
+        return {
+            vendor,
+            user,
+        };
     }
 
     async getAllVendors(options: { page?: number; limit?: number; search?: string }) {
@@ -68,6 +80,16 @@ export class VendorProfileService {
         const vendor = await this.vendorRepo.findById(id);
         if (!vendor) throw new Error("Vendor not found");
         return await this.vendorRepo.update(id, { isKycApproved: false, profileStatus: "rejected" });
+    }
+
+    async isProfileCompleted(userId: string) {
+        const vendor = await this.vendorRepo.findByUserId(userId);
+
+        if (!vendor) {
+            return { completed: false, message: "Vendor profile not found" };
+        }
+
+        return { completed: true, message: "Vendor profile exists" };
     }
 
 

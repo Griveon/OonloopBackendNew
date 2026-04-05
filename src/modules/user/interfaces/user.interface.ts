@@ -9,9 +9,9 @@ export interface IUser {
     lastName?: string;
     email: string;
     password: string;
-    mobileNumber?: string; 
-    dateOfBirth?: Date;    
-    gender?: Gender;       
+    mobileNumber?: string;
+    dateOfBirth?: Date;
+    gender?: Gender;
 
     status: UserStatus;
 
@@ -19,6 +19,7 @@ export interface IUser {
     emailVerificationToken?: string;
 
     role: UserRole;
+    pin: string;
 
     resetPasswordToken?: string;
     resetPasswordExpire?: Date;

@@ -12,7 +12,11 @@ export class VendorProfileRepository {
     }
 
     async findById(id: string) {
-        return await VendorProfileModel.findById(id);
+        return await VendorProfileModel.findOne({ user: id });
+    }
+
+    async findByUserId(userId: string) {
+        return await VendorProfileModel.findOne({ user: userId });
     }
 
     async findByEmail(email: string) {

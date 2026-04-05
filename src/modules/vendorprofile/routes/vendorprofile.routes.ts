@@ -41,5 +41,6 @@ vendorProfileRoutes.post(
 
 vendorProfileRoutes.put("/approve-kyc/:id", authMiddleware, controller.approveKyc);
 vendorProfileRoutes.put("/reject-kyc/:id", authMiddleware, controller.rejectKyc);
+vendorProfileRoutes.get("/check-profile-completed/:id", authMiddleware, controller.checkProfileCompleted);
 
 export default vendorProfileRoutes;

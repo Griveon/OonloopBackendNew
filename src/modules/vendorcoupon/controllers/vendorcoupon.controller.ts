@@ -1,12 +1,12 @@
 import type { Request, Response } from "express";
-import { BrandService } from "../services/brand.service.js";
+import { VendorCouponService } from "../services/vendorcoupon.service.js";
 import { ResponseUtil } from "../../../utils/response.util.js";
 
-export class BrandController {
-    private service: BrandService;
+export class VendorCouponController {
+    private service: VendorCouponService;
 
     constructor() {
-        this.service = new BrandService();
+        this.service = new VendorCouponService();
     }
 
     private getParam(param: string | string[] | undefined): string | null {
@@ -16,13 +16,11 @@ export class BrandController {
 
     create = async (req: Request, res: Response) => {
         try {
-            const data = req.body;
-
-            const result = await this.service.create(data);
+            const result = await this.service.create(req.body);
 
             return res
                 .status(201)
-                .json(ResponseUtil.created("Brand created", result));
+                .json(ResponseUtil.created("Coupon created", result));
         } catch (error: any) {
             return res
                 .status(400)
@@ -32,25 +30,11 @@ export class BrandController {
 
     getAll = async (req: Request, res: Response) => {
         try {
-            const page = parseInt((req.query.page as string) || "1", 10);
-            const limit = parseInt((req.query.limit as string) || "10", 10);
-            const search = (req.query.search as string) || "";
+            const result = await this.service.getAll();
 
-            const { brands, total } = await this.service.getAll({
-                page,
-                limit,
-                search,
-            });
-
-            return res.status(200).json(
-                ResponseUtil.paginated(
-                    "Brands fetched successfully",
-                    brands,
-                    page,
-                    limit,
-                    total
-                )
-            );
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Fetched successfully", result));
         } catch (error: any) {
             return res
                 .status(500)
@@ -80,6 +64,22 @@ export class BrandController {
         }
     };
 
+    getByVendor = async (req: Request, res: Response) => {
+        try {
+            const vendorId = this.getParam(req.params.vendorId);
+
+            const result = await this.service.getByVendor(vendorId!);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Fetched successfully", result));
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
     update = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -90,9 +90,7 @@ export class BrandController {
                     .json(ResponseUtil.badRequest("ID is required"));
             }
 
-            const data = req.body;
-
-            const result = await this.service.update(id, data);
+            const result = await this.service.update(id, req.body);
 
             return res
                 .status(200)
@@ -108,13 +106,7 @@ export class BrandController {
         try {
             const id = this.getParam(req.params.id);
 
-            if (!id) {
-                return res
-                    .status(400)
-                    .json(ResponseUtil.badRequest("ID is required"));
-            }
-
-            const result = await this.service.deactivate(id);
+            const result = await this.service.delete(id!);
 
             return res
                 .status(200)
