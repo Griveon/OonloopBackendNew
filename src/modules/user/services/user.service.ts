@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import type { IUser } from "../interfaces/user.interface.js";
 import { UserRepository } from "../repositories/user.repository.js";
 import jwt from "jsonwebtoken";
+import { sendWhatsAppOtp } from "../../../utils/sendWhatsAppOtp.util.js";
 
 export class UserService {
     private userRepository: UserRepository;
@@ -103,6 +104,10 @@ export class UserService {
         //     throw new Error("Invalid credentials");
         // }
 
+        if (user?.pin !== password) {
+            throw new Error("Invalid credentials");
+        }
+
         await this.userRepository.updateLastLogin(user._id.toString());
 
         const token = jwt.sign(
@@ -173,5 +178,101 @@ export class UserService {
         const updatedUser = await this.userRepository.updateProfile(userId, data);
 
         return updatedUser;
+    }
+
+    private generateOTP(): string {
+        return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    async sendOtp(mobile: string) {
+        const user = await this.userRepository.findByMobileNumber(mobile);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const otp = this.generateOTP();
+
+        await this.userRepository.updateOtp(
+            user._id.toString(),
+            otp,
+            Date.now() + 5 * 60 * 1000 // 5 minutes
+        );
+
+        await sendWhatsAppOtp({
+            mobile,
+            otp,
+        });
+
+        return { message: "OTP sent successfully" };
+    }
+
+    async verifyOtp(mobile: string, otp: string) {
+        const user: any = await this.userRepository.findByMobileNumber(mobile);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        if (!user.otp || !user.otpExpiry) {
+            throw new Error("OTP not generated");
+        }
+
+        if (Date.now() > user.otpExpiry) {
+            throw new Error("OTP expired");
+        }
+
+        if (user.otp !== otp) {
+            throw new Error("Invalid OTP");
+        }
+
+        // ✅ Clear OTP after success
+        await this.userRepository.clearOtp(user._id.toString());
+
+        // ✅ Update last login
+        await this.userRepository.updateLastLogin(user._id.toString());
+
+        // ✅ Generate JWT
+        const token = jwt.sign(
+            { id: user._id, email: user.email },
+            process.env.JWT_SECRET as string,
+            { expiresIn: "7d" }
+        );
+
+        const { password, otp: _, otpExpiry, ...safeUser } = user.toObject();
+
+        return {
+            user: safeUser,
+            token,
+        };
+    }
+
+    async updatePin(mobile: string, pin: string) {
+        if (!mobile) {
+            throw new Error("Mobile number is required");
+        }
+
+        if (!pin || pin.length !== 6) {
+            throw new Error("PIN must be exactly 6 digits");
+        }
+
+        const user = await this.userRepository.findByMobileNumber(mobile);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        // Optional: hash PIN (recommended for security)
+        // const hashedPin = await bcrypt.hash(pin, 10);
+
+        const updatedUser = await this.userRepository.updatePinByMobile(
+            mobile,
+            pin
+        );
+
+        return {
+            message: "PIN updated successfully",
+            userId: updatedUser?._id,
+        };
     }
 }

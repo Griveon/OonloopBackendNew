@@ -11,8 +11,16 @@ export class VendorCouponService {
         return await this.repo.create(data);
     }
 
-    async getAll() {
-        return await this.repo.findAll();
+    async getAll(filters: {
+        vendorId?: string;
+        page: number;
+        limit: number;
+        isActive?: string;
+        discountType?: string;
+        couponType?: string;
+        search?: string;
+    }) {
+        return await this.repo.findAll(filters);
     }
 
     async getById(id: string) {

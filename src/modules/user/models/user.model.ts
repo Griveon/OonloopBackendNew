@@ -63,8 +63,8 @@ const UserSchema: Schema<IUserDocument> = new Schema(
             type: String,
             required: false,
             trim: true,
-            minlength: 6,  
-            maxlength: 6,  
+            minlength: 6,
+            maxlength: 6,
         },
 
         role: {
@@ -73,7 +73,7 @@ const UserSchema: Schema<IUserDocument> = new Schema(
             required: true,
             default: "user",
         },
-        
+
         resetPasswordToken: {
             type: String,
         },
@@ -85,6 +85,8 @@ const UserSchema: Schema<IUserDocument> = new Schema(
         lastLogin: {
             type: Date,
         },
+        otp: { type: String },
+        otpExpiry: { type: Number },
     },
     {
         timestamps: true,

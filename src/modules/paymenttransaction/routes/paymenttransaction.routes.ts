@@ -10,11 +10,12 @@ const controller = new PaymentTransactionController();
 paymentTransactionsRoutes.post(
     "/create",
     authMiddleware,
-    validateUsingZOD(createPaymentTransactionSchema),
     controller.create
 );
 
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);
+
+paymentTransactionsRoutes.post("/verify", authMiddleware, controller.verify);
 
 paymentTransactionsRoutes.get("/get/:id", authMiddleware, controller.getById);
 

@@ -43,4 +43,40 @@ export class UserRepository {
         ).select("-password");
     }
 
+    async updateOtp(userId: string, otp: string, expiry: number) {
+        return await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                otp,
+                otpExpiry: expiry,
+            },
+            { new: true }
+        );
+    }
+
+    async findByOtp(userId: string, otp: string) {
+        return await UserModel.findOne({
+            _id: userId,
+            otp,
+            otpExpiry: { $gt: Date.now() }
+        });
+    }
+
+    async clearOtp(userId: string) {
+        return await UserModel.findByIdAndUpdate(
+            userId,
+            {
+                $unset: { otp: "", otpExpiry: "" }
+            },
+            { new: true }
+        );
+    }
+
+    async updatePinByMobile(mobileNumber: string, pin: string) {
+        return await UserModel.findOneAndUpdate(
+            { mobileNumber },
+            { pin },
+            { new: true }
+        );
+    }
 }

@@ -14,6 +14,29 @@ export class VendorSubscriptionController {
         return id || null;
     }
 
+    getActiveByUser = async (req: Request, res: Response) => {
+        try {
+            const userId = (req as any).user?.id;
+
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("User ID is required"));
+            }
+
+            const subscription = await this.service.getActiveSubscriptionByUser(userId);
+            console.log(subscription)
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Active subscription fetched successfully", subscription));
+
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
     create = async (req: Request, res: Response) => {
         try {
             const data = req.body;
@@ -55,6 +78,28 @@ export class VendorSubscriptionController {
             }
 
             const result = await this.service.getById(id);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Fetched successfully", result));
+        } catch (error: any) {
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
+        }
+    };
+    
+    getSubscriptionByUser = async (req: Request, res: Response) => {
+        try {
+            const id = this.getParam(req.params.id);
+
+            if (!id) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("ID is required"));
+            }
+
+            const result = await this.service.getByUserId(id);
 
             return res
                 .status(200)

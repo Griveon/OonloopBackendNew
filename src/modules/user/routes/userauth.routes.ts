@@ -23,4 +23,8 @@ userAuthRoutes.post(
 
 userAuthRoutes.put("/profile/update", authMiddleware, userController.updateProfile);
 
+userAuthRoutes.post("/send-otp", userLoginController.sendOtp);
+userAuthRoutes.post("/verify-otp", userLoginController.verifyOtp);
+userAuthRoutes.put("/update-user-pin", userLoginController.updatePin);
+
 export default userAuthRoutes;

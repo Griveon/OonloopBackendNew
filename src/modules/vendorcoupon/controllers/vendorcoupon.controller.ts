@@ -30,11 +30,35 @@ export class VendorCouponController {
 
     getAll = async (req: Request, res: Response) => {
         try {
-            const result = await this.service.getAll();
+            const {
+                vendorId,
+                page = "1",
+                limit = "10",
+                isActive,
+                discountType,
+                couponType,
+                search
+            } = req.query;
 
-            return res
-                .status(200)
-                .json(ResponseUtil.success("Fetched successfully", result));
+            const result = await this.service.getAll({
+                vendorId: vendorId as string,
+                page: Number(page),
+                limit: Number(limit),
+                isActive: isActive as string,
+                discountType: discountType as string,
+                couponType: couponType as string,
+                search: search as string,
+            });
+
+            return res.status(200).json(
+                ResponseUtil.paginated(
+                    "Fetched successfully",
+                    result.data,
+                    result.page,
+                    result.limit,
+                    result.total
+                )
+            );
         } catch (error: any) {
             return res
                 .status(500)

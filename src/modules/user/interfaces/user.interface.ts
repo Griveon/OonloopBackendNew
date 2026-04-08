@@ -28,6 +28,8 @@ export interface IUser {
 
     createdAt?: Date;
     updatedAt?: Date;
+    otp: String,
+    otpExpiry: Number,
 }
 
 export interface IUserDocument extends IUser, Document { }

@@ -114,4 +114,18 @@ export class PaymentTransactionController {
                 .json(ResponseUtil.badRequest(error.message));
         }
     };
+
+    verify = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.verifyPayment(req.body);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Payment verified", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
 }

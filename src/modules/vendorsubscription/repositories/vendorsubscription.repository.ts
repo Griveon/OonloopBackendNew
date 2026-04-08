@@ -20,9 +20,16 @@ export class VendorSubscriptionRepository {
         });
     }
 
-    async findActiveByVendor(vendor: string) {
+    async findByUserId(id: string) {
         return await VendorSubscriptionModel.findOne({
-            vendor,
+            user: id,
+            isActive: true,
+        });
+    }
+
+    async findActiveByVendor(user: any) {
+        return await VendorSubscriptionModel.findOne({
+            user: user,
             status: "active",
             isActive: true,
         });

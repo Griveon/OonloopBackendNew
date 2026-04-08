@@ -25,6 +25,18 @@ vendorSubscriptionRoutes.get(
     controller.getById
 );
 
+vendorSubscriptionRoutes.get(
+    "/getbyuser/:id",
+    authMiddleware,
+    controller.getSubscriptionByUser
+);
+
+vendorSubscriptionRoutes.get(
+    "/get-active-subscription/:id",
+    authMiddleware,
+    controller.getActiveByUser
+);
+
 // ✅ Get all
 vendorSubscriptionRoutes.get(
     "/getall",
