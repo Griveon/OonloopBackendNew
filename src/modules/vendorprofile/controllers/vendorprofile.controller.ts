@@ -106,7 +106,7 @@ export class VendorProfileController {
         try {
             const id = this.getParam(req.params.id);
             if (!id) return res.status(400).json(ResponseUtil.badRequest("Vendor ID is required"));
-
+            console.log(req.body);
             const vendor = await this.vendorService.updateVendor(id, req.body);
             return res.status(200).json(ResponseUtil.success("Vendor updated successfully", vendor));
         } catch (error: any) {
@@ -164,4 +164,26 @@ export class VendorProfileController {
         }
     };
 
+    checkKYCStatus = async (req: Request, res: Response) => {
+        try {
+            const id = this.getParam(req.params.id);
+
+            if (!id) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("User ID is required"));
+            }
+
+            const result = await this.vendorService.getKYCStatusByUser(id);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success(result.message, result));
+        } catch (error: any) {
+            console.error(error);
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
 }

@@ -92,5 +92,34 @@ export class VendorProfileService {
         return { completed: true, message: "Vendor profile exists" };
     }
 
+    async isKYCCompletedByUser(userId: string) {
+        const vendor = await this.vendorRepo.findByUserId(userId);
+
+        if (!vendor) {
+            return { completed: false, message: "Vendor profile not found" };
+        }
+
+        return { completed: true, message: "Vendor profile exists" };
+    }
+    
+    async getKYCStatusByUser(userId: string) {
+        const vendor = await this.vendorRepo.findKYCStatusByUserId(userId);
+
+        if (!vendor) {
+            return {
+                isKycSubmitted: false,
+                isKycApproved: false,
+                profileStatus: "not_created",
+                message: "Vendor profile not found",
+            };
+        }
+
+        return {
+            isKycSubmitted: vendor.isKycSubmitted,
+            isKycApproved: vendor.isKycApproved,
+            profileStatus: vendor.profileStatus,
+            message: "KYC status fetched successfully",
+        };
+    }
 
 }

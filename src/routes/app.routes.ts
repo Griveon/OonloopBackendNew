@@ -22,6 +22,10 @@ import gstruleRoutes from "../modules/gstrule/routes/gstrule.routes.js";
 import vendorCouponRoutes from "../modules/vendorcoupon/routes/vendorcoupon.routes.js";
 import unitRoutes from "../modules/unit/routes/unit.routes.js";
 import productRoutes from "../modules/product/routes/product.routes.js";
+import vendorDashboardCountsRoutes from "../modules/vendordashboardcounts/routes/vendordashboardcounts.routes.js";
+import userProfileRoutes from "../modules/userprofile/routes/userprofile.routes.js";
+import cartRoutes from "../modules/cart/routes/cart.routes.js";
+import wishlistRoutes from "../modules/wishlist/routes/wishlist.routes.js";
 
 userAuthRoutes
 
@@ -77,6 +81,14 @@ router.use("/vendorcoupon", vendorCouponRoutes);
 router.use("/unit", unitRoutes);
 
 router.use("/product", productRoutes);
+
+router.use("/vendordashboard", vendorDashboardCountsRoutes);
+
+router.use("/userprofile", userProfileRoutes);
+
+router.use("/cart", cartRoutes);
+
+router.use("/wishlist", wishlistRoutes);
 
 
 

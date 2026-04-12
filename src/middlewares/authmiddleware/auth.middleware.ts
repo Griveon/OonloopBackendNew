@@ -35,7 +35,8 @@ export const authMiddleware = async (
 
         const token: any = authHeader.split(" ")[1];
 
-
+        console.log(token);
+        
         const secret = process.env.JWT_SECRET;
         if (!secret) {
             throw new Error("JWT_SECRET is not configured");
