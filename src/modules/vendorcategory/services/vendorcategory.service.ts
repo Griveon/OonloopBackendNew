@@ -11,6 +11,10 @@ export class VendorCategoryService {
         return await this.repo.create(data);
     }
 
+    async createBulk(data: any[]) {
+        return await this.repo.createBulk(data);
+    }
+
     async getAll() {
         return await this.repo.findAll();
     }

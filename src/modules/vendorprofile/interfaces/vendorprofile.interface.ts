@@ -88,6 +88,7 @@ export interface IVendorProfile {
         udyamAadhaar?: IKycDocument;
         shopActLicense?: IKycDocument;
         certificateOfIncorporation?: IKycDocument;
+        other?: IKycDocument;
     };
 
     isKycSubmitted: boolean;

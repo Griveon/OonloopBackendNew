@@ -11,6 +11,15 @@ export class ProductVariantService {
         return await this.repo.create(data);
     }
 
+    // productVariant.service.ts
+    async createBulk(data: Partial<any>[]) {
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error("Invalid data. Expected non-empty array.");
+        }
+
+        return await this.repo.createBulk(data);
+    }
+
     async getAll() {
         return await this.repo.findAll();
     }

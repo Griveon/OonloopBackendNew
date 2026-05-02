@@ -14,7 +14,14 @@ productCategoryRoutes.post(
     controller.create
 );
 
-productCategoryRoutes.get("/getall", authMiddleware, controller.getAll);
+productCategoryRoutes.post(
+    "/createbulk",
+    controller.createBulk
+);
+
+productCategoryRoutes.get("/getall", controller.getAll);
+
+productCategoryRoutes.get("/getbyvendorcategory/:vendorCategoryId", controller.getByVendorCategory);
 
 productCategoryRoutes.get("/get/:id", authMiddleware, controller.getById);
 

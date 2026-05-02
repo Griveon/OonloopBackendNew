@@ -21,7 +21,7 @@ export class PaymentTransactionService {
 
         console.log("paymentMethod, providerConnection, amount, currency, userId, planId")
         console.log(paymentMethod, providerConnection, amount, currency, userId, planId)
-        if (!paymentMethod || !providerConnection || !amount || !userId || !planId) {
+        if (!paymentMethod || !providerConnection || !amount || !userId) {
             throw new Error("Missing required fields");
         }
 
@@ -38,6 +38,9 @@ export class PaymentTransactionService {
             throw new Error("Only online payments allowed");
         }
 
+        console.log("providerConnection");
+        console.log(providerConnection);
+
         const provider = await ProviderConnectionModel.findById(providerConnection);
         if (!provider || provider.isDeleted || !provider.isActive) {
             throw new Error("Invalid provider connection");
@@ -49,6 +52,8 @@ export class PaymentTransactionService {
 
         const keyIdEncrypted = provider.credentials.get("keyId");
         const keySecretEncrypted = provider.credentials.get("keySecret");
+
+        console.log(keyIdEncrypted);
 
         if (!keyIdEncrypted || !keySecretEncrypted) {
             throw new Error("Payment provider credentials not configured properly");

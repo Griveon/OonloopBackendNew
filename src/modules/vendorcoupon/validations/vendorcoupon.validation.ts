@@ -10,13 +10,11 @@ export const createVendorCouponSchema = z.object({
 
     couponCode: z.string().min(3),
 
-    description: z.string().optional(),
 });
 
 export const updateVendorCouponSchema = z.object({
     discountType: z.enum(["PERCENTAGE", "FIXED"]).optional(),
     discountValue: z.number().positive().optional(),
     minOrderValue: z.number().optional(),
-    description: z.string().optional(),
     isActive: z.boolean().optional(),
 }).strict();

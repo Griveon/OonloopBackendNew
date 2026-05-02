@@ -6,6 +6,11 @@ export class ProductVariantRepository {
         return await ProductVariantModel.create(data);
     }
 
+    // productVariant.repo.ts
+    async createBulk(data: Partial<IProductVariant>[]) {
+        return await ProductVariantModel.insertMany(data, { ordered: false });
+    }
+
     async findAll() {
         return await ProductVariantModel.find({ isActive: true }).sort({
             createdAt: -1,

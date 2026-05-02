@@ -30,6 +30,28 @@ export class ProductCategoryController {
         }
     };
 
+    createBulk = async (req: Request, res: Response) => {
+        try {
+            const data = req.body;
+
+            if (!Array.isArray(data)) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("Payload must be an array"));
+            }
+
+            const result = await this.service.createBulk(data);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Product categories created", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (req: Request, res: Response) => {
         try {
             const result = await this.service.getAll();
@@ -109,6 +131,28 @@ export class ProductCategoryController {
             return res
                 .status(404)
                 .json(ResponseUtil.notFound(error.message));
+        }
+    };
+
+    getByVendorCategory = async (req: Request, res: Response) => {
+        try {
+            const vendorCategoryId = this.getParam(req.params.vendorCategoryId);
+
+            if (!vendorCategoryId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("vendorCategoryId is required"));
+            }
+
+            const result = await this.service.getByVendorCategory(vendorCategoryId);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Fetched successfully", result));
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
         }
     };
 

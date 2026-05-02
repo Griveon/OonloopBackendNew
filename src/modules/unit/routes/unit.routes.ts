@@ -8,6 +8,7 @@ const unitRoutes = Router();
 const controller = new UnitController();
 
 unitRoutes.post("/create", authMiddleware, validateUsingZOD(createUnitSchema), controller.create);
+unitRoutes.post("/createbulk",  controller.createBulk);
 unitRoutes.get("/getall", authMiddleware, controller.getAll);
 unitRoutes.get("/get/:id", authMiddleware, controller.getById);
 unitRoutes.put("/update/:id", authMiddleware, validateUsingZOD(updateUnitSchema), controller.update);

@@ -275,4 +275,18 @@ export class UserService {
             userId: updatedUser?._id,
         };
     }
+
+    async getUserProfile(userId: string) {
+        const user = await this.userRepository.findById(userId);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        // ✅ Remove sensitive fields
+        const { password, otp, otpExpiry, resetPasswordToken, resetPasswordExpire, ...safeUser } =
+            user.toObject();
+
+        return safeUser;
+    }
 }

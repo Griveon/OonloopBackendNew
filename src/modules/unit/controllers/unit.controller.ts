@@ -24,6 +24,28 @@ export class UnitController {
         }
     };
 
+    createBulk = async (req: Request, res: Response) => {
+        try {
+            const data = req.body;
+
+            if (!Array.isArray(data)) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("Payload must be an array"));
+            }
+
+            const result = await this.service.createBulk(data);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Units created successfully", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (req: Request, res: Response) => {
         try {
             const result = await this.service.getAll();

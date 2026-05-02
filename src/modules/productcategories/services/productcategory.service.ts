@@ -11,8 +11,16 @@ export class ProductCategoryService {
         return await this.repo.create(data);
     }
 
+    async createBulk(data: any[]) {
+        return await this.repo.createBulk(data);
+    }
+
     async getAll() {
         return await this.repo.findAll();
+    }
+
+    async getByVendorCategory(vendorCategoryId: string) {
+        return await this.repo.findByVendorCategory(vendorCategoryId);
     }
 
     async getById(id: string) {

@@ -5,6 +5,10 @@ export class VendorCategoryRepository {
     async create(data: Partial<IVendorCategory>) {
         return await VendorCategoryModel.create(data);
     }
+    
+    async createBulk(data: Partial<IVendorCategory>[]) {
+        return await VendorCategoryModel.insertMany(data);
+    }
 
     async findAll() {
         return await VendorCategoryModel.find({ isActive: true }).sort({ name: 1 });

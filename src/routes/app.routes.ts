@@ -26,6 +26,8 @@ import vendorDashboardCountsRoutes from "../modules/vendordashboardcounts/routes
 import userProfileRoutes from "../modules/userprofile/routes/userprofile.routes.js";
 import cartRoutes from "../modules/cart/routes/cart.routes.js";
 import wishlistRoutes from "../modules/wishlist/routes/wishlist.routes.js";
+import vendorRoutes from "../modules/vendor/routes/vendor.routes.js";
+import orderRoutes from "../modules/order/routes/order.routes.js";
 
 userAuthRoutes
 
@@ -89,6 +91,10 @@ router.use("/userprofile", userProfileRoutes);
 router.use("/cart", cartRoutes);
 
 router.use("/wishlist", wishlistRoutes);
+
+router.use("/vendors", vendorRoutes);
+
+router.use("/customerorder", orderRoutes);
 
 
 

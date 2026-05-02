@@ -7,6 +7,10 @@ export class UnitRepository {
         return await UnitModel.create(data);
     }
 
+    async createBulk(data: Partial<IUnitDocument>[]) {
+        return await UnitModel.insertMany(data);
+    }
+
     async findById(id: string) {
         return await UnitModel.findById(id);
     }
@@ -30,5 +34,5 @@ export class UnitRepository {
     async deactivate(id: string) {
         return await UnitModel.findByIdAndUpdate(id, { isActive: false }, { new: true });
     }
-    
+
 }

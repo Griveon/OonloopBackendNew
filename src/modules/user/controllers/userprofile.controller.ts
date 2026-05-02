@@ -11,7 +11,7 @@ export class UserController {
 
     updateProfile = async (req: Request, res: Response) => {
         try {
-            const userId = req.user?.id; 
+            const userId = req.user?.id;
             if (!userId) {
                 return res.status(401).json(ResponseUtil.unauthorized("Unauthorized"));
             }
@@ -28,4 +28,26 @@ export class UserController {
                 .json(ResponseUtil.badRequest(error.message));
         }
     };
+    getProfile = async (req: Request, res: Response) => {
+        try {
+            const userId = (req as any).user?.id as string;
+
+            if (!userId) {
+                return res
+                    .status(401)
+                    .json(ResponseUtil.unauthorized("Unauthorized"));
+            }
+
+            const user = await this.userService.getUserProfile(userId);
+
+            return res.status(200).json(
+                ResponseUtil.success("User profile fetched successfully", user)
+            );
+        } catch (error: any) {
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
+        }
+    };
+
 }

@@ -15,6 +15,11 @@ ribbonRoutes.post(
     controller.create
 );
 
+ribbonRoutes.post(
+    "/createbulk",
+    controller.createBulk
+);
+
 ribbonRoutes.get("/getall", authMiddleware, controller.getAll);
 ribbonRoutes.get("/get/:id", authMiddleware, controller.getById);
 

@@ -178,7 +178,8 @@ const VendorSchema: Schema<IVendorDocument> = new Schema(
             tradeLicense: kycDocumentSchema,
             udyamAadhaar: kycDocumentSchema,
             shopActLicense: kycDocumentSchema,
-            certificateOfIncorporation: kycDocumentSchema
+            certificateOfIncorporation: kycDocumentSchema,
+            other: kycDocumentSchema,
         },
 
         isKycSubmitted: {

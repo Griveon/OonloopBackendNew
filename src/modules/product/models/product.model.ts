@@ -61,8 +61,8 @@ const videoSchema = new Schema<IProductVideo>(
 const productSchema = new Schema<IProduct>(
     {
         vendorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-        productCategory: { type: Schema.Types.ObjectId, ref: "VendorProductCategory", required: true, index: true },
-        category: { type: Schema.Types.ObjectId, ref: "VendorProductCategory", required: true, index: true },
+        productCategory: { type: Schema.Types.ObjectId, ref: "ProductCategory", required: true, index: true },
+        category: { type: Schema.Types.ObjectId, ref: "VendorCategory", required: true, index: true },
         name: { type: String, required: true },
         description: { type: String, default: "" },
         variants: [variantSchema],

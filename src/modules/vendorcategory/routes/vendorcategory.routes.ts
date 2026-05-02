@@ -17,7 +17,12 @@ vendorCategoryRoutes.post(
     controller.create
 );
 
-vendorCategoryRoutes.get("/getall", authMiddleware, controller.getAll);
+vendorCategoryRoutes.post(
+    "/createbulk",
+    controller.createBulk
+);
+
+vendorCategoryRoutes.get("/getall", controller.getAll);
 
 vendorCategoryRoutes.get("/get/:id", authMiddleware, controller.getById);
 

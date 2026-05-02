@@ -12,6 +12,10 @@ export class RibbonRepository {
         });
     }
 
+    async createBulk(data: Partial<IRibbon>[]) {
+        return await RibbonModel.insertMany(data);
+    }
+
     async findById(id: string) {
         return await RibbonModel.findById(id);
     }

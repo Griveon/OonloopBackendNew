@@ -16,11 +16,6 @@ const orderItemSchema = new Schema(
         name: { type: String, required: true },
         sku: String,
 
-        attributes: {
-            type: Map,
-            of: Schema.Types.Mixed,
-        },
-
         price: {
             type: Number,
             required: true,
@@ -110,6 +105,11 @@ const orderSchema = new Schema<IOrderDocument>(
         discount: {
             type: Number,
             default: 0,
+        },
+
+        gstRuleId: {
+            type: Schema.Types.ObjectId,
+            ref: "GSTRule",
         },
 
         gstAmount: {

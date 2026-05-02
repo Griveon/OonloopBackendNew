@@ -6,6 +6,12 @@ export class GSTRuleRepository {
         return await GSTRuleModel.create(data);
     }
 
+    async createBulk(data: Partial<IGSTRule>[]) {
+        return await GSTRuleModel.insertMany(data, {
+            ordered: false
+        });
+    }
+
     async findAll() {
         return await GSTRuleModel.find().sort({ hsnCode: 1 });
     }

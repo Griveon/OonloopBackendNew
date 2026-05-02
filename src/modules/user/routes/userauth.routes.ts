@@ -21,9 +21,10 @@ userAuthRoutes.post(
     userLoginController.login
 );
 
-userAuthRoutes.put("/profile/update", authMiddleware, userController.updateProfile);
+userAuthRoutes.put("/user/update", authMiddleware, userController.updateProfile);
 
 userAuthRoutes.post("/send-otp", userLoginController.sendOtp);
+userAuthRoutes.get("/user/me", authMiddleware, userController.getProfile);
 userAuthRoutes.post("/verify-otp", userLoginController.verifyOtp);
 userAuthRoutes.put("/update-user-pin", userLoginController.updatePin);
 

@@ -16,8 +16,6 @@ export interface IOrderItem {
     name: string;
     sku?: string;
 
-    attributes?: Record<string, any>;
-
     price: number;
     mrp?: number;
 
@@ -58,6 +56,7 @@ export interface IOrder {
     subtotal: number;
     discount?: number;
     gstAmount?: number;
+    gstRuleId?: Types.ObjectId;
     shippingCharge?: number;
     totalAmount: number;
 

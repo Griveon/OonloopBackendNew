@@ -30,6 +30,24 @@ export class ProductVariantController {
         }
     };
 
+    // productVariant.controller.ts
+    createBulk = async (req: Request, res: Response) => {
+        try {
+            const data = req.body;
+
+            const result = await this.service.createBulk(data);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Bulk variants created", result));
+
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (req: Request, res: Response) => {
         try {
             const result = await this.service.getAll();

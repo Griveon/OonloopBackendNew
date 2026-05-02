@@ -19,6 +19,11 @@ gstRuleRoutes.post(
     controller.create
 );
 
+gstRuleRoutes.post(
+    "/createbulk",
+    controller.createBulk
+);
+
 gstRuleRoutes.get("/getall", authMiddleware, controller.getAll);
 gstRuleRoutes.get("/get/:id", authMiddleware, controller.getById);
 

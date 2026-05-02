@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { VendorCouponController } from "../controllers/vendorcoupon.controller.js";
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
-import { validateUsingZOD } from "../../../utils/zodvalidate.util.js";
+// import { validateUsingZOD } from "../../../utils/zodvalidate.util.js";
 import {
     createVendorCouponSchema,
     updateVendorCouponSchema,
@@ -13,7 +13,7 @@ const controller = new VendorCouponController();
 vendorCouponRoutes.post(
     "/create",
     authMiddleware,
-    validateUsingZOD(createVendorCouponSchema),
+    // validateUsingZOD(createVendorCouponSchema),
     controller.create
 );
 
@@ -26,7 +26,7 @@ vendorCouponRoutes.get("/vendor/:vendorId", authMiddleware, controller.getByVend
 vendorCouponRoutes.put(
     "/update/:id",
     authMiddleware,
-    validateUsingZOD(updateVendorCouponSchema),
+    // validateUsingZOD(updateVendorCouponSchema),
     controller.update
 );
 

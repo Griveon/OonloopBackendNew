@@ -6,6 +6,10 @@ export class ProductCategoryRepository {
         return await ProductCategoryModel.create(data);
     }
 
+    async createBulk(data: Partial<IProductCategory>[]) {
+        return await ProductCategoryModel.insertMany(data, { ordered: false });
+    }
+
     async findAll() {
         return await ProductCategoryModel.find({ isActive: true });
     }
@@ -35,4 +39,12 @@ export class ProductCategoryRepository {
             { new: true }
         );
     }
+    
+    async findByVendorCategory(vendorCategoryId: string) {
+        return await ProductCategoryModel.find({
+            vendorCategory: vendorCategoryId,
+            isActive: true,
+        });
+    }
+
 }

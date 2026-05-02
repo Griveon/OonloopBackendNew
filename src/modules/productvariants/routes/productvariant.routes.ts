@@ -14,6 +14,11 @@ productVariantRoutes.post(
     controller.create
 );
 
+productVariantRoutes.post(
+    "/createbulk",
+    controller.createBulk
+);
+
 productVariantRoutes.get("/getall", authMiddleware, controller.getAll);
 productVariantRoutes.get("/get/:id", authMiddleware, controller.getById);
 

@@ -1,3 +1,4 @@
+import type { IGSTRule } from "../interfaces/gstrule.interface.js";
 import { GSTRuleRepository } from "../repositories/gstrule.repository.js";
 
 export class GSTRuleService {
@@ -14,6 +15,14 @@ export class GSTRuleService {
         return await this.repo.create(data);
     }
 
+    async createBulk(data: Partial<IGSTRule>[]) {
+        if (!data.length) {
+            throw new Error("Empty payload");
+        }
+
+        return await this.repo.createBulk(data);
+    }
+    
     async getAll() {
         return await this.repo.findAll();
     }

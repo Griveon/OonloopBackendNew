@@ -12,6 +12,10 @@ export class UnitService {
         return await this.repo.create(data);
     }
 
+    async createBulk(data: Partial<IUnitDocument>[]) {
+        return await this.repo.createBulk(data);
+    }
+
     async getAll() {
         return await this.repo.findAll();
     }
