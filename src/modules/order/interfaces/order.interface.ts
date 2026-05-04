@@ -2,12 +2,19 @@ import { Document, Types } from "mongoose";
 
 export type OrderStatus =
     | "pending"
+    | "placed"
     | "confirmed"
     | "packed"
     | "shipped"
     | "delivered"
     | "cancelled"
     | "returned";
+
+export type PaymentStatus =
+    | "pending"
+    | "success"
+    | "failed"
+    | "refunded";
 
 export interface IOrderItem {
     product: Types.ObjectId;
@@ -42,9 +49,8 @@ export interface IAddress {
 export interface IOrder {
     user: Types.ObjectId;
     vendor: Types.ObjectId;
-
     orderNumber: string;
-
+    
     items: IOrderItem[];
 
     billingAddress?: IAddress;
@@ -59,7 +65,9 @@ export interface IOrder {
     gstRuleId?: Types.ObjectId;
     shippingCharge?: number;
     totalAmount: number;
-
+    paymentStatus: PaymentStatus;
+    paymentMode?: "cod" | "online";
+    
     status: OrderStatus;
 
     tracking?: string;

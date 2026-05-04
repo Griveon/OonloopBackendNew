@@ -84,6 +84,7 @@ export class OrderSummuryService {
             // ✅ PUSH STRUCTURED ITEM (MATCHING YOUR MODEL STYLE)
             summaryItems.push({
                 productId: product._id,
+                vendorId: product.vendorId,
                 name: product.name,
                 slug: product.slug,
                 images: [
@@ -137,7 +138,11 @@ export class OrderSummuryService {
         // ✅ Round values (important for INR)
         const round = (num: number) => Math.round(num * 100) / 100;
 
+        const vendorId = summaryItems[0]?.vendorId || null;
+        console
+
         return {
+            vendorId,
             subtotal: round(subtotal),
             gstTotal: round(gstTotal),
             platformFee: round(platformFee),

@@ -13,9 +13,17 @@ paymentTransactionsRoutes.post(
     controller.create
 );
 
+paymentTransactionsRoutes.post(
+    "/createorder",
+    authMiddleware,
+    controller.createOrderTransaction
+);
+
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);
 
 paymentTransactionsRoutes.post("/verify", authMiddleware, controller.verify);
+
+paymentTransactionsRoutes.post("/verifyorder", authMiddleware, controller.verifyOrder);
 
 paymentTransactionsRoutes.get("/get/:id", authMiddleware, controller.getById);
 

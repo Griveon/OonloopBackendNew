@@ -27,6 +27,20 @@ export class PaymentTransactionController {
                 .json(ResponseUtil.badRequest(error.message));
         }
     };
+    
+    createOrderTransaction = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.createOrderTransaction(req.body);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Transaction created", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
 
     getAll = async (_: Request, res: Response) => {
         try {
@@ -122,6 +136,20 @@ export class PaymentTransactionController {
             return res
                 .status(200)
                 .json(ResponseUtil.success("Payment verified", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    verifyOrder = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.verifyOrderPayment(req.body);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Order payment verified", result));
         } catch (error: any) {
             return res
                 .status(400)

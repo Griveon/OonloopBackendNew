@@ -131,6 +131,7 @@ const orderSchema = new Schema<IOrderDocument>(
             type: String,
             enum: [
                 "pending",
+                "placed",
                 "confirmed",
                 "packed",
                 "shipped",
@@ -138,6 +139,13 @@ const orderSchema = new Schema<IOrderDocument>(
                 "cancelled",
                 "returned",
             ],
+            default: "pending",
+            index: true,
+        },
+
+        paymentStatus: {
+            type: String,
+            enum: ["pending", "success", "failed", "refunded"],
             default: "pending",
             index: true,
         },

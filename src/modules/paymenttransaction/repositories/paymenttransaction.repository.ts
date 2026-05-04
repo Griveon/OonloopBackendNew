@@ -1,5 +1,6 @@
 import { PaymentTransactionModel } from "../models/paymenttransaction.model.js";
 import type { IPaymentTransaction } from "../interfaces/paymenttransaction.interface.js";
+import { OrderModel } from "../../order/models/order.model.js";
 
 export class PaymentTransactionRepository {
 
@@ -14,6 +15,13 @@ export class PaymentTransactionRepository {
 
     async findById(id: string) {
         return await PaymentTransactionModel.findOne({
+            _id: id,
+            isActive: true,
+        });
+    }
+    
+    async findOrderById(id: string) {
+        return await OrderModel.findOne({
             _id: id,
             isActive: true,
         });
@@ -57,4 +65,28 @@ export class PaymentTransactionRepository {
             { new: true }
         );
     }
+
+    // order.repository.ts
+    async markOrderPaid(orderId: string, transactionId: string) {
+        return await OrderModel.findByIdAndUpdate(
+            orderId,
+            {
+                paymentTransaction: transactionId,
+                status: "placed",
+                paymentStatus: "success",
+            },
+            { new: true }
+        );
+    }
+
+    async markOrderFailed(orderId: string) {
+        return await OrderModel.findByIdAndUpdate(
+            orderId,
+            {
+                status: "cancelled",
+            },
+            { new: true }
+        );
+    }
+
 }
