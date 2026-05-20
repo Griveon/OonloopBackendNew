@@ -19,6 +19,17 @@ export class ProductRepository {
         return { items, total };
     }
 
+    async findByVendor(filter: any = {}, page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+
+        const [items, total] = await Promise.all([
+            ProductModel.find(filter).skip(skip).limit(limit),
+            ProductModel.countDocuments(filter),
+        ]);
+
+        return { items, total, page, limit };
+    }
+    
     async update(id: string, data: Partial<IProduct>) {
         return await ProductModel.findByIdAndUpdate(id, data, { new: true });
     }

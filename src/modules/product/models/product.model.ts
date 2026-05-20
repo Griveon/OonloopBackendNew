@@ -14,13 +14,14 @@ const imageSchema = new Schema<IProductImage>(
 
 const variantSchema = new Schema<IProductVariant>(
     {
-        attributes: { type: Map, of: Schema.Types.Mixed, required: true },
+        attributes: { type: Map, of: Schema.Types.Mixed },
         images: [imageSchema],
         unit: { type: Schema.Types.ObjectId, ref: "Unit", index: true },
         unitValue: { type: Number, min: 0 },
         stock: { type: Number, default: 0 },
         sku: { type: String },
         price: { type: Number },
+        mrp: { type: Number },
     },
     { _id: true }
 );

@@ -21,6 +21,12 @@ productRoutes.get(
 );
 
 productRoutes.get(
+    "/getallbyvendor",
+    authMiddleware,
+    controller.getAllByVendor
+);
+
+productRoutes.get(
     "/get/:id",
     authMiddleware,
     controller.getById
@@ -55,6 +61,18 @@ productRoutes.post(
     "/video/upload",
     upload.array("productVideos", 1),
     productVideoController.upload
+);
+
+productRoutes.put(
+    "/status/:id",
+    authMiddleware,
+    controller.toggleStatus
+);
+
+productRoutes.put(
+    "/quantity/:id",
+    authMiddleware,
+    controller.updateQuantity
 );
 
 export default productRoutes;

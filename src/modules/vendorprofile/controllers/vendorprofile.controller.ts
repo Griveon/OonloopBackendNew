@@ -68,6 +68,7 @@ export class VendorProfileController {
     getVendorById = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
+            console.log("Fetching vendor with ID:", id);
 
             if (!id) {
                 return res.status(400).json(

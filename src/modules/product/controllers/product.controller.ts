@@ -45,6 +45,46 @@ export class ProductController {
         }
     };
 
+    getAllByVendor = async (req: Request, res: Response) => {
+        try {
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 10;
+
+            const vendorId = req.query.vendorId as string;
+
+            if (!vendorId) {
+                return res.status(400).json(
+                    ResponseUtil.badRequest("vendorId is required")
+                );
+            }
+
+            const filter = req.query.filter
+                ? JSON.parse(req.query.filter as string)
+                : {};
+
+            const finalFilter = {
+                ...filter,
+                vendorId,
+            };
+
+            const result = await this.service.getAllByVendor(page, limit, finalFilter);
+
+            return res.status(200).json(
+                ResponseUtil.paginated(
+                    "Products fetched successfully",
+                    result.items,
+                    result.page,
+                    result.limit,
+                    result.total
+                )
+            );
+        } catch (error: any) {
+            return res.status(500).json(
+                ResponseUtil.serverError(error.message)
+            );
+        }
+    };
+
     getById = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
@@ -104,4 +144,56 @@ export class ProductController {
                 .json(ResponseUtil.notFound(error.message));
         }
     };
+
+    toggleStatus = async (req: Request, res: Response) => {
+        try {
+            const { id }: any = req.params;
+            const { isActive } = req.body;
+
+            if (typeof isActive !== "boolean") {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("isActive must be boolean"));
+            }
+
+            const product = await this.service.toggleStatus(id, isActive);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Product status updated", product));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    updateQuantity = async (req: Request, res: Response) => {
+        try {
+            const { id }: any = req.params;
+            const { type, qty, variantId } = req.body;
+
+            if (!["increase", "decrease"].includes(type)) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("type must be increase or decrease"));
+            }
+
+            const product = await this.service.updateQuantity(
+                id,
+                type,
+                Number(qty || 0),
+                variantId
+            );
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Quantity updated", product));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
 }

@@ -32,6 +32,8 @@ export class VendorProductsRepository {
             productFilter.name = { $regex: search, $options: "i" };
         }
 
+        console.log(category);
+
         if (category) {
             productFilter.category = new mongoose.Types.ObjectId(category);
         }
@@ -45,7 +47,7 @@ export class VendorProductsRepository {
         if (inStock) {
             productFilter.stock = { $gt: 0 };
         }
-
+        console.log("Product filter:", productFilter);
         const [products, total] = await Promise.all([
             ProductModel.find(productFilter)
                 .populate("category", "name")
@@ -58,6 +60,8 @@ export class VendorProductsRepository {
 
             ProductModel.countDocuments(productFilter),
         ]);
+
+        console.log("Products found:", products, "Total:", total);
 
         const categoriesMap = new Map();
 

@@ -4,6 +4,8 @@ import { NearbyUserVendorsController } from "../controllers/nearbyuservendors.co
 import { VendorProductsController } from "../controllers/vendorproducts.controller.js";
 import { VendorProductDetailsController } from "../controllers/vendorproductdetails.controller.js";
 import { NearbyVendorProductsController } from "../controllers/nearbyvendorproducts.controller.js";
+import { MinimalNearbyProductsByCategoriesController } from "../controllers/minimalnearbyproductsbycategories.controller.js";
+import { CategoryProductsController } from "../controllers/categorywiseproducts.controller.js";
 
 const vendorRoutes = Router();
 
@@ -11,6 +13,8 @@ const controller = new NearbyUserVendorsController();
 const vendorProductsController = new VendorProductsController();
 const vendorProductDetailsController = new VendorProductDetailsController();
 const nearbyVendorProductsController = new NearbyVendorProductsController();
+const minimalNearbyProductsByCategoriesController = new MinimalNearbyProductsByCategoriesController();
+const categoryProductsController = new CategoryProductsController();
 vendorRoutes.get(
     "/nearby",
     authMiddleware,
@@ -33,6 +37,18 @@ vendorRoutes.get(
     "/nearby-products",
     authMiddleware,
     nearbyVendorProductsController.getNearbyVendorProducts
+);
+
+vendorRoutes.get(
+    "/nearby-products-by-categories",
+    authMiddleware,
+    minimalNearbyProductsByCategoriesController.getNearbyCategoryWiseProducts
+);
+
+vendorRoutes.get(
+    "/category-wise-nearby-products",
+    authMiddleware,
+    categoryProductsController.getCategoryProducts
 );
 
 export default vendorRoutes;

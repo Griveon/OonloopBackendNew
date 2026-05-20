@@ -9,6 +9,7 @@ export interface IProductVariant {
     stock?: number;
     sku?: string;
     price?: number;
+    mrp?: number;
 }
 export interface IProductVideo {
     productId?: Types.ObjectId;
