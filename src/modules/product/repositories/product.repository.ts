@@ -1,6 +1,7 @@
 import { ProductModel } from "../models/product.model.js";
 import type { IProduct } from "../interfaces/product.interface.js";
 import { VendorCouponModel } from "../../vendorcoupon/models/vendorcoupon.model.js";
+import { VendorProfileModel } from "../../vendorprofile/models/vendorprofile.model.js";
 
 export class ProductRepository {
     async create(data: IProduct) {
@@ -165,6 +166,32 @@ export class ProductRepository {
             page,
             limit,
         };
+    }
+
+    async findRecentByPincode(pincode: string, limit = 50) {
+        // 1. Vendors whose store is registered in this pincode
+        const vendors = await VendorProfileModel.find({
+            "storeLocationAddress.postalCode": pincode,
+        }).select("user");
+
+        const vendorIds = vendors.map((v) => v.user);
+
+        if (vendorIds.length === 0) {
+            return [];
+        }
+
+        // 2. Their most recently added active products
+        return ProductModel.find({
+            isActive: true,
+            vendorId: { $in: vendorIds },
+        })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .populate("category")
+            .populate("productCategory")
+            .populate("unit")
+            .populate("vendorId", "firstName lastName")
+            .lean();
     }
 
     async getVendorCouponProducts(

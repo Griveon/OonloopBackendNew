@@ -23,6 +23,11 @@ productRoutes.get(
 );
 
 productRoutes.get(
+    "/recent_products",
+    controller.getRecentProducts
+);
+
+productRoutes.get(
     "/getproductsbyvendorcouponid/:couponId",
     authMiddleware,
     controller.getVendorCouponProducts

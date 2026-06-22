@@ -334,6 +334,14 @@ export class ProductService {
         );
     }
 
+    async getRecentProductsByPincode(pincode: string, limit = 50) {
+        if (!pincode?.trim()) {
+            throw new Error("pincode is required");
+        }
+
+        return this.repo.findRecentByPincode(pincode.trim(), limit);
+    }
+
     async getVendorCouponProducts(
         couponId: any,
         page = 1,

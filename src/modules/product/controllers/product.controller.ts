@@ -284,6 +284,32 @@ export class ProductController {
         }
     };
 
+    getRecentProducts = async (req: Request, res: Response) => {
+        try {
+            const pincode = (req.query.pincode as string) || "";
+            const limit = Number(req.query.limit) || 50;
+
+            if (!pincode.trim()) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("pincode is required"));
+            }
+
+            const products = await this.service.getRecentProductsByPincode(
+                pincode,
+                limit
+            );
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Recent products fetched successfully", products));
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
     getVendorCouponProducts = async (req: Request, res: Response) => {
         try {
             const { couponId } = req.params;
