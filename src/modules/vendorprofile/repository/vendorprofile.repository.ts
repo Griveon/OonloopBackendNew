@@ -94,4 +94,21 @@ export class VendorProfileRepository {
     async updateLastLogin(id: string) {
         return await VendorProfileModel.findByIdAndUpdate(id, { lastLogin: new Date() }, { new: true });
     }
+
+    async updateHolidayStatus(
+        userId: string,
+        isOnHoliday: boolean,
+        holidayMessage?: string
+    ) {
+        return await VendorProfileModel.findOneAndUpdate(
+            { user: userId },
+            {
+                $set: {
+                    isOnHoliday,
+                    holidayMessage: holidayMessage || "",
+                },
+            },
+            { new: true }
+        );
+    }
 }

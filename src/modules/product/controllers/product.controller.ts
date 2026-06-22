@@ -51,6 +51,7 @@ export class ProductController {
             const limit = Number(req.query.limit) || 10;
 
             const vendorId = req.query.vendorId as string;
+            const search = (req.query.search as string) || "";
 
             if (!vendorId) {
                 return res.status(400).json(
@@ -62,12 +63,24 @@ export class ProductController {
                 ? JSON.parse(req.query.filter as string)
                 : {};
 
-            const finalFilter = {
+            const finalFilter: any = {
                 ...filter,
                 vendorId,
             };
 
-            const result = await this.service.getAllByVendor(page, limit, finalFilter);
+            if (search.trim()) {
+                finalFilter.$or = [
+                    { name: { $regex: search, $options: "i" } },
+                    { description: { $regex: search, $options: "i" } },
+                    { slug: { $regex: search, $options: "i" } },
+                ];
+            }
+
+            const result = await this.service.getAllByVendor(
+                page,
+                limit,
+                finalFilter
+            );
 
             return res.status(200).json(
                 ResponseUtil.paginated(
@@ -88,13 +101,17 @@ export class ProductController {
     getById = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);
+
             if (!id) {
                 return res
                     .status(400)
                     .json(ResponseUtil.badRequest("ID is required"));
             }
 
-            const product = await this.service.getById(id);
+            const userId: any = req.user?.id;
+
+            const product = await this.service.getById(id, userId);
+
             return res
                 .status(200)
                 .json(ResponseUtil.success("Product fetched successfully", product));
@@ -196,4 +213,108 @@ export class ProductController {
         }
     };
 
+    searchByVendor = async (req: Request, res: Response) => {
+        try {
+            const vendorId = req.query.vendorId as string;
+            const search = (req.query.search as string) || "";
+
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 10;
+
+            if (!vendorId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("vendorId is required"));
+            }
+
+            const result = await this.service.searchByVendor(
+                vendorId,
+                search,
+                page,
+                limit
+            );
+
+            return res.status(200).json(
+                ResponseUtil.paginated(
+                    "Products fetched successfully",
+                    result.items,
+                    result.page,
+                    result.limit,
+                    result.total
+                )
+            );
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
+    searchMainCatalog = async (req: Request, res: Response) => {
+        try {
+            const search = (req.query.search as string) || "";
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 10;
+
+            if (!search.trim()) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("search keyword is required"));
+            }
+
+            const result = await this.service.searchMainCatalog(
+                search,
+                page,
+                limit
+            );
+
+            return res.status(200).json(
+                ResponseUtil.paginated(
+                    "Main catalog products fetched successfully",
+                    result.items,
+                    result.page,
+                    result.limit,
+                    result.total
+                )
+            );
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
+    getVendorCouponProducts = async (req: Request, res: Response) => {
+        try {
+            const { couponId } = req.params;
+
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 10;
+
+            const result = await this.service.getVendorCouponProducts(
+                couponId,
+                page,
+                limit
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "Coupon products fetched successfully",
+                data: {
+                    coupon: result.coupon,
+                    products: result.products,
+                },
+                pagination: {
+                    page: result.page,
+                    limit: result.limit,
+                    total: result.total,
+                    totalPages: Math.ceil(result.total / result.limit),
+                },
+            });
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
 }

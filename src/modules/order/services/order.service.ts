@@ -1,4 +1,3 @@
-import { GSTRuleModel } from "../../gstrule/models/gstrule.model.js";
 import { ProductModel } from "../../product/models/product.model.js";
 import { OrderRepository } from "../repository/order.repository.js";
 import { generateOrderNumber } from "../utils/ordernumbergenerate.util.js";
@@ -8,7 +7,6 @@ export class OrderService {
 
     async create(data: any) {
         let subtotal = 0;
-        let gstAmount = 0;
 
         data.orderNumber = await generateOrderNumber();
 
@@ -20,28 +18,15 @@ export class OrderService {
             const itemTotal = item.price * item.quantity;
             subtotal += itemTotal;
 
-            if (data.gstRuleId) {
-                const gstRule = await GSTRuleModel.findById(data.gstRuleId);
-
-                if (gstRule) {
-                    const gstPercent =
-                        gstRule.igst || gstRule.cgst + gstRule.sgst;
-
-                    gstAmount += (itemTotal * gstPercent) / 100;
-                }
-            }
-
             item.total = itemTotal;
         }
 
-        const discount = data.discount || 0;
-        const shippingCharge = data.shippingCharge || 0;
+        const platformFee = 49;
 
-        const totalAmount =
-            subtotal - discount + shippingCharge + gstAmount;
+        const totalAmount = subtotal + platformFee;
 
         data.subtotal = subtotal;
-        data.gstAmount = gstAmount;
+        data.platformFee = platformFee;
         data.totalAmount = totalAmount;
 
         return await this.repo.create(data);
@@ -55,6 +40,22 @@ export class OrderService {
 
     async getAll(page = 1, limit = 10, filter: any = {}) {
         return await this.repo.findAll(filter, page, limit);
+    }
+
+    // services/order.service.ts
+
+    async getVendorOrders(
+        vendorId: string,
+        page = 1,
+        limit = 10,
+        filter: any = {}
+    ) {
+        return await this.repo.findByVendor(
+            vendorId,
+            page,
+            limit,
+            filter
+        );
     }
 
     async update(id: any, data: any) {

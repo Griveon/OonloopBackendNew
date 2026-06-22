@@ -28,6 +28,10 @@ import cartRoutes from "../modules/cart/routes/cart.routes.js";
 import wishlistRoutes from "../modules/wishlist/routes/wishlist.routes.js";
 import vendorRoutes from "../modules/vendor/routes/vendor.routes.js";
 import orderRoutes from "../modules/order/routes/order.routes.js";
+import productContainerRoutes from "../modules/productcontainer/routes/productcontainer.routes.js";
+import productViewRoutes from "../modules/productview/routes/productview.routes.js";
+import productReviewRoutes from "../modules/productreviews/routes/productreview.routes.js";
+import driverProfileRoutes from "../modules/driverprofile/routes/driverprofile.routes.js";
 
 userAuthRoutes
 
@@ -95,6 +99,18 @@ router.use("/wishlist", wishlistRoutes);
 router.use("/vendors", vendorRoutes);
 
 router.use("/customerorder", orderRoutes);
+
+router.use("/vendororder", orderRoutes);
+
+router.use("/productcontainer", productContainerRoutes);
+
+router.use("/productview", productViewRoutes);
+
+router.use("/productreview", productReviewRoutes);
+
+router.use("/driverprofile", driverProfileRoutes);
+
+router.use("/driverorders", orderRoutes);
 
 
 

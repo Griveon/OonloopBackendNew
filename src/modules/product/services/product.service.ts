@@ -2,6 +2,7 @@ import { ProductRepository } from "../repositories/product.repository.js";
 import type { IProduct } from "../interfaces/product.interface.js";
 import { ProductModel } from "../models/product.model.js";
 import slugify from "slugify";
+import { CartModel } from "../../cart/models/cart.model.js";
 
 export class ProductService {
     private repo: ProductRepository;
@@ -29,20 +30,131 @@ export class ProductService {
         return slug;
     }
 
-    async create(data: IProduct) {
+    async create(data: any) {
         const slug = await this.generateUniqueSlug(data.name);
 
-        return await this.repo.create({
+        console.log(data);
+
+        // =========================================================
+        // 1️⃣ CLEAN IMAGES (ONLY CDN URLs)
+        // =========================================================
+        const safeImages = Array.isArray(data.images)
+            ? data.images
+                .filter((img: any) => {
+                    const url = img.url || img.uri || "";
+                    return url.startsWith("http");
+                })
+                .map((img: any) => ({
+                    url: img.url || img.uri,
+                    name: img.name || "",
+                    alt: img.alt || "",
+                    isPrimary: img.isPrimary || false,
+                    position: img.position || 0,
+                }))
+            : [];
+        console.log("Safe Images:", safeImages);
+        // =========================================================
+        // 2️⃣ CLEAN VIDEOS (ONLY CDN URLs)
+        // =========================================================
+        const safeVideos = Array.isArray(data.videos)
+            ? data.videos
+                .filter((v: any) => {
+                    const url = v.url || v.uri || "";
+                    return url.startsWith("http");
+                })
+                .map((v: any) => ({
+                    url: v.url || v.uri,
+                    name: v.name || "",
+                    type: v.type || "",
+                    isPrimary: v.isPrimary || false,
+                    position: v.position || 0,
+                }))
+            : [];
+
+        // =========================================================
+        // 3️⃣ CLEAN VARIANTS (NO RAW IMAGES)
+        // =========================================================
+        const safeVariants = Array.isArray(data.variants)
+            ? data.variants.map((v: any) => ({
+                ...(v._id ? { _id: v._id } : {}),
+
+                attributes: v.attributes || {},
+
+                unit: v.unit,
+                unitValue: Number(v.unitValue || 0),
+                stock: Number(v.stock || 0),
+                sku: v.sku,
+                price: Number(v.price || 0),
+                mrp: Number(v.mrp || 0),
+
+                // ❌ IMPORTANT: DO NOT store raw images here
+                // images are handled by upload API only
+                images: [],
+            }))
+            : [];
+
+        // =========================================================
+        // 4️⃣ BUILD FINAL PRODUCT
+        // =========================================================
+
+        const productPayload = {
             ...data,
+
             slug,
-        });
+
+            // IMPORTANT FLAGS
+            isMainCatalogProduct: data.isMainCatalogProduct ?? true,
+
+            images: safeImages,
+            videos: safeVideos,
+            variants: safeVariants,
+        };
+
+        // =========================================================
+        // 5️⃣ CREATE PRODUCT
+        // =========================================================
+        return await this.repo.create(productPayload);
     }
 
 
-    async getById(id: string) {
+    async getById(id: string, userId?: string) {
         const product = await this.repo.findById(id);
-        if (!product) throw new Error("Product not found");
-        return product;
+
+        if (!product) {
+            throw new Error("Product not found");
+        }
+
+        let cartInfo = {
+            isAdded: false,
+            quantity: 0,
+            cartItemId: null,
+        };
+
+        if (userId) {
+            const cart = await CartModel.findOne({
+                user: userId,
+                "items.product": id,
+            });
+
+            if (cart) {
+                const item: any = cart.items.find(
+                    (i: any) => i.product.toString() === id
+                );
+
+                if (item) {
+                    cartInfo = {
+                        isAdded: true,
+                        quantity: item.quantity,
+                        cartItemId: item._id,
+                    };
+                }
+            }
+        }
+
+        return {
+            ...product.toObject(),
+            cart: cartInfo,
+        };
     }
 
     async getAll(page = 1, limit = 10, filter: any = {}) {
@@ -51,6 +163,14 @@ export class ProductService {
 
     async getAllByVendor(page = 1, limit = 10, filter: any = {}) {
         return this.repo.findByVendor(filter, page, limit);
+    }
+
+    async searchMainCatalog(
+        keyword: string,
+        page = 1,
+        limit = 10
+    ) {
+        return this.repo.searchMainCatalog(keyword, page, limit);
     }
 
     async update(id: string, data: Partial<IProduct>) {
@@ -200,5 +320,43 @@ export class ProductService {
         return await this.repo.findById(id);
     }
 
+    async searchByVendor(
+        vendorId: string,
+        search: string,
+        page = 1,
+        limit = 10
+    ) {
+        return this.repo.searchByVendor(
+            vendorId,
+            search,
+            page,
+            limit
+        );
+    }
 
+    async getVendorCouponProducts(
+        couponId: any,
+        page = 1,
+        limit = 10
+    ) {
+        const coupon = await this.repo.findByCouponId(couponId);
+
+        if (!coupon) {
+            throw new Error("Coupon not found");
+        }
+
+        const result = await this.repo.getVendorCouponProducts(
+            coupon.vendorId.toString(),
+            page,
+            limit
+        );
+
+        return {
+            coupon,
+            products: result.items,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+        };
+    }
 }

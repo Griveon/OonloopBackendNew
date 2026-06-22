@@ -7,9 +7,11 @@ import { upload } from "../../../config/multer.config.js";
 import { ProductImageController } from "../controllers/productimage.controller.js";
 import { VariantImageController } from "../controllers/variantimage.controller.js";
 import { ProductVideoController } from "../controllers/productvideo.controller.js";
+import { ProductSearchController } from "../controllers/globalproductsearch.controller.js";
 
 const productRoutes = Router();
 const controller = new ProductController();
+const searchController = new ProductSearchController();
 const productImageController = new ProductImageController();
 const variantImageController = new VariantImageController();
 const productVideoController = new ProductVideoController();
@@ -21,15 +23,38 @@ productRoutes.get(
 );
 
 productRoutes.get(
+    "/getproductsbyvendorcouponid/:couponId",
+    authMiddleware,
+    controller.getVendorCouponProducts
+);
+
+productRoutes.get(
     "/getallbyvendor",
     authMiddleware,
     controller.getAllByVendor
 );
 
 productRoutes.get(
+    "/searchbyvendor",
+    authMiddleware,
+    controller.searchByVendor
+);
+
+productRoutes.get(
+    "/searchmaincatalog",
+    authMiddleware,
+    controller.searchMainCatalog
+);
+
+productRoutes.get(
     "/get/:id",
     authMiddleware,
     controller.getById
+);
+
+productRoutes.get(
+    "/globalsearch",
+    searchController.SearchProducts
 );
 
 productRoutes.post(

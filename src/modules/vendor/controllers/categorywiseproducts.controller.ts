@@ -12,6 +12,7 @@ export class CategoryProductsController {
     getCategoryProducts = async (req: Request, res: Response) => {
         try {
             const categoryId = req.query.categoryId as string;
+            const vendorId = req.query.vendorId as string | undefined;
 
             const latitude = Number(req.query.latitude);
             const longitude = Number(req.query.longitude);
@@ -40,7 +41,8 @@ export class CategoryProductsController {
                 maxDistance,
                 page,
                 limit,
-                search
+                search,
+                vendorId
             );
 
             return res.status(200).json(

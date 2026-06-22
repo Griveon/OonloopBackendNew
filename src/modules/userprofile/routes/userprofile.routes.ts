@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
 import { UserProfileController } from "../controllers/userprofile.controller.js";
+import { UserDashboardController } from "../controllers/userdashboard.controller.js";
 
 const userProfileRoutes = Router();
 const controller = new UserProfileController();
+const dashboardController = new UserDashboardController();
 
 userProfileRoutes.get("/me", authMiddleware, controller.getProfile);
+
+userProfileRoutes.get("/dashboard", authMiddleware, dashboardController.getDashboard);
 
 userProfileRoutes.post(
     "/create",

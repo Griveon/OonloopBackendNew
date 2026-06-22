@@ -203,6 +203,26 @@ const VendorSchema: Schema<IVendorDocument> = new Schema(
             type: Boolean,
             default: false,
         },
+
+        isOnHoliday: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+
+        holidayMessage: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        holidayStartDate: {
+            type: Date,
+        },
+
+        holidayEndDate: {
+            type: Date,
+        },
     },
     {
         timestamps: true,

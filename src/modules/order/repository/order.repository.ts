@@ -14,6 +14,39 @@ export class OrderRepository {
             .populate("gstRuleId");
     }
 
+    async findByVendor(
+        vendorId: string,
+        page = 1,
+        limit = 10,
+        filter: any = {}
+    ) {
+        const skip = (page - 1) * limit;
+
+        const query = {
+            ...filter,
+            vendor: vendorId,
+        };
+
+        const [items, total] = await Promise.all([
+            OrderModel.find(query)
+                .populate("user", "firstName lastName email mobileNumber")
+                .populate("paymentMethod")
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+
+            OrderModel.countDocuments(query),
+        ]);
+
+        return {
+            items,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
+
     async findAll(filter: any = {}, page = 1, limit = 10) {
         const skip = (page - 1) * limit;
 

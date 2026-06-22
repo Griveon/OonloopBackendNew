@@ -101,7 +101,7 @@ export class VendorProfileService {
 
         return { completed: true, message: "Vendor profile exists" };
     }
-    
+
     async getKYCStatusByUser(userId: string) {
         const vendor = await this.vendorRepo.findKYCStatusByUserId(userId);
 
@@ -120,6 +120,24 @@ export class VendorProfileService {
             profileStatus: vendor.profileStatus,
             message: "KYC status fetched successfully",
         };
+    }
+
+    async updateHolidayStatus(
+        userId: string,
+        isOnHoliday: boolean,
+        holidayMessage?: string
+    ) {
+        const vendor = await this.vendorRepo.findByUserId(userId);
+
+        if (!vendor) {
+            throw new Error("Vendor not found");
+        }
+
+        return await this.vendorRepo.updateHolidayStatus(
+            userId,
+            isOnHoliday,
+            holidayMessage
+        );
     }
 
 }

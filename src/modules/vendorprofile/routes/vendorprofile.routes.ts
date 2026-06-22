@@ -24,6 +24,11 @@ vendorProfileRoutes.put("/update/:id", authMiddleware, controller.updateVendor);
 
 vendorProfileRoutes.delete("/delete/:id", authMiddleware, controller.deleteVendor);
 
+vendorProfileRoutes.put(
+    "/holiday/:id",
+    controller.toggleHolidayStatus
+);
+
 // vendorProfileRoutes.post(
 //     "/submit-kyc/:id",
 //     authMiddleware,

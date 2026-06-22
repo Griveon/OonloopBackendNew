@@ -16,6 +16,16 @@ export type PaymentStatus =
     | "failed"
     | "refunded";
 
+export type DeliveryStatus =
+    | "not_assigned"
+    | "assigned"
+    | "pickup_pending"
+    | "picked_up"
+    | "out_for_delivery"
+    | "delivered"
+    | "failed"
+    | "returned";
+
 export interface IOrderItem {
     product: Types.ObjectId;
     variant?: Types.ObjectId;
@@ -46,11 +56,22 @@ export interface IAddress {
     country?: string;
 }
 
+export interface ITrackingHistory {
+    status: string;
+    remark?: string;
+    updatedBy?: Types.ObjectId;
+    updatedAt?: Date;
+}
+
 export interface IOrder {
     user: Types.ObjectId;
     vendor: Types.ObjectId;
+
+    // Driver
+    driver?: Types.ObjectId;
+
     orderNumber: string;
-    
+
     items: IOrderItem[];
 
     billingAddress?: IAddress;
@@ -65,10 +86,15 @@ export interface IOrder {
     gstRuleId?: Types.ObjectId;
     shippingCharge?: number;
     totalAmount: number;
+
     paymentStatus: PaymentStatus;
     paymentMode?: "cod" | "online";
-    
+
+    // Order lifecycle
     status: OrderStatus;
+
+    // Delivery lifecycle
+    deliveryStatus?: DeliveryStatus;
 
     tracking?: string;
     courierName?: string;
@@ -76,6 +102,18 @@ export interface IOrder {
     shippedAt?: Date;
     deliveredAt?: Date;
     cancelledAt?: Date;
+
+    // Driver timestamps
+    driverAssignedAt?: Date;
+    pickedUpAt?: Date;
+    outForDeliveryAt?: Date;
+
+    // OTP verification
+    deliveryOtp?: string;
+    otpVerified?: boolean;
+
+    // Tracking timeline
+    trackingHistory?: ITrackingHistory[];
 
     notes?: string;
 

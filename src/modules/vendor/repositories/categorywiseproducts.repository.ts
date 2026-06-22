@@ -11,43 +11,66 @@ export class CategoryProductsRepository {
         maxDistance: number,
         skip: number,
         limit: number,
-        search: string
+        search: string,
+        vendorId?: string
     ) {
 
-        const nearbyVendors = await VendorProfileModel.find({
-            "storeLocationAddress.location": {
-                $geoWithin: {
-                    $centerSphere: [
-                        [lng, lat],
-                        maxDistance / 6378100,
-                    ],
-                },
-            },
-        }).select("user");
+        let vendorIds: mongoose.Types.ObjectId[] = [];
 
-        const vendorIds = nearbyVendors
-            .map(v => v.user)
-            .filter(Boolean)
-            .map((id:any) => new mongoose.Types.ObjectId(id));
+        /**
+         * CASE 1: If vendorId is provided → ignore geo filter
+         */
+        if (vendorId) {
+            vendorIds = [new mongoose.Types.ObjectId(vendorId)];
+        }
+
+        /**
+         * CASE 2: No vendorId → find nearby vendors
+         */
+        else {
+            const nearbyVendors = await VendorProfileModel.find({
+                "storeLocationAddress.location": {
+                    $geoWithin: {
+                        $centerSphere: [
+                            [lng, lat],
+                            maxDistance / 6378100, // radius in radians
+                        ],
+                    },
+                },
+            }).select("user");
+
+            vendorIds = nearbyVendors
+                .map(v => v.user)
+                .filter(Boolean)
+                .map(id => new mongoose.Types.ObjectId(id));
+        }
 
         if (!vendorIds.length) {
-            return {
-                products: [],
-                total: 0,
-            };
+            return { products: [], total: 0 };
         }
 
         const match: any = {
             vendorId: { $in: vendorIds },
-            category: new mongoose.Types.ObjectId(categoryId)
+            category: new mongoose.Types.ObjectId(categoryId),
         };
 
-        if (search && search.trim()) {
+        if (search?.trim()) {
             match.name = {
-                $regex: search,
+                $regex: search.trim(),
                 $options: "i",
             };
         }
+        // const test = await ProductModel.find({
+        //     vendorId: { $in: vendorIds }
+        // }).limit(5);
+
+        // const testCategory = await ProductModel.find({
+        //     category: new mongoose.Types.ObjectId(categoryId)
+        // }).limit(5);
+
+        // console.log("Category only test:", testCategory);
+
+        // console.log("Nearby vendors found:", vendorIds, "Sample products:", test);
 
         const [products, total] = await Promise.all([
             ProductModel.find(match)
@@ -61,9 +84,6 @@ export class CategoryProductsRepository {
             ProductModel.countDocuments(match),
         ]);
 
-        return {
-            products,
-            total,
-        };
+        return { products, total };
     }
 }

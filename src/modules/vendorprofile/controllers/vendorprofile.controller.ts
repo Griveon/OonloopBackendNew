@@ -187,4 +187,44 @@ export class VendorProfileController {
                 .json(ResponseUtil.serverError(error.message));
         }
     };
+
+    toggleHolidayStatus = async (req: Request, res: Response) => {
+        try {
+            const id = this.getParam(req.params.id);
+
+            if (!id) {
+                return res.status(400).json(
+                    ResponseUtil.badRequest("Vendor ID is required")
+                );
+            }
+
+            const { isOnHoliday, holidayMessage } = req.body;
+
+            if (typeof isOnHoliday !== "boolean") {
+                return res.status(400).json(
+                    ResponseUtil.badRequest(
+                        "isOnHoliday must be boolean"
+                    )
+                );
+            }
+
+            const vendor =
+                await this.vendorService.updateHolidayStatus(
+                    id,
+                    isOnHoliday,
+                    holidayMessage
+                );
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Holiday status updated successfully",
+                    vendor
+                )
+            );
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
 }

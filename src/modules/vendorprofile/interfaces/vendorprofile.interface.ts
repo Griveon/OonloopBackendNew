@@ -99,6 +99,14 @@ export interface IVendorProfile {
 
     createdAt?: Date;
     updatedAt?: Date;
+
+    isOnHoliday?: boolean;
+
+    holidayMessage?: string;
+
+    holidayStartDate?: Date;
+
+    holidayEndDate?: Date;
 }
 
 export interface IVendorDocument extends IVendorProfile, Document { }

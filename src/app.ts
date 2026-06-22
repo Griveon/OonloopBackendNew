@@ -4,6 +4,7 @@ import helmet from "helmet";
 import compression from "compression";
 
 import appRoutes from "./routes/app.routes.js";
+// import { migrate } from "./productrunscript.js";
 
 const app = express();
 
@@ -29,6 +30,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 /**
  * Routes
  */
+
 app.use("/api/v1", appRoutes);
+
+// migrate();
 
 export default app;

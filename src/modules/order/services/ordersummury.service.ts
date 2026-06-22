@@ -107,35 +107,13 @@ export class OrderSummuryService {
             });
         }
 
-        const commission: any = await this.repo.getActivePlatformFee();
-        console.log("Active Commission:", commission);
-
-        const commissionData = Array.isArray(commission)
-            ? commission[0]
-            : commission;
-
-        let platformFee = 0;
-
-        if (commissionData) {
-            if (
-                commissionData.minAmount &&
-                subtotal < commissionData.minAmount
-            ) {
-                platformFee = 0;
-            } else if (commissionData.type === "percentage") {
-                platformFee = (subtotal * commissionData.value) / 100;
-            } else {
-                platformFee = commissionData.value;
-            }
-        }
+        const serviceFee = 49;
 
 
         const deliveryCharge = subtotal > 500 ? 0 : 50;
 
-        const totalAmount =
-            subtotal + gstTotal + platformFee + deliveryCharge;
+        const totalAmount = subtotal + serviceFee
 
-        // ✅ Round values (important for INR)
         const round = (num: number) => Math.round(num * 100) / 100;
 
         const vendorId = summaryItems[0]?.vendorId || null;
@@ -145,7 +123,7 @@ export class OrderSummuryService {
             vendorId,
             subtotal: round(subtotal),
             gstTotal: round(gstTotal),
-            platformFee: round(platformFee),
+            platformFee: round(serviceFee),
             deliveryCharge: round(deliveryCharge),
             totalAmount: round(totalAmount),
             items: summaryItems,

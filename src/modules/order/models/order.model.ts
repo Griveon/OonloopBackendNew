@@ -133,7 +133,9 @@ const orderSchema = new Schema<IOrderDocument>(
                 "pending",
                 "placed",
                 "confirmed",
+                "waiting_for_packing",
                 "packed",
+                "waiting_for_delivery_partner",
                 "shipped",
                 "delivered",
                 "cancelled",
@@ -158,6 +160,39 @@ const orderSchema = new Schema<IOrderDocument>(
         cancelledAt: Date,
 
         notes: String,
+
+        driver: {
+            type: Schema.Types.ObjectId,
+            ref: "Driver",
+            index: true,
+        },
+
+        deliveryStatus: {
+            type: String,
+            enum: [
+                "not_assigned",
+                "assigned",
+                "pickup_pending",
+                "picked_up",
+                "out_for_delivery",
+                "delivered",
+                "failed",
+                "returned",
+            ],
+            default: "not_assigned",
+            index: true,
+        },
+
+        driverAssignedAt: Date,
+        pickedUpAt: Date,
+        outForDeliveryAt: Date,
+
+        deliveryOtp: String,
+
+        otpVerified: {
+            type: Boolean,
+            default: false,
+        },
 
         isActive: {
             type: Boolean,

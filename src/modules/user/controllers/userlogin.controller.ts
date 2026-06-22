@@ -13,7 +13,8 @@ export class UserLoginController {
     login = async (req: Request, res: Response) => {
         try {
             const { identifier, pin } = req.body;
-            console.log(identifier, pin)
+            // console.log("Received login request with identifier:", identifier);
+            // console.log(identifier, pin)
 
             const data = await this.userService.login(identifier, pin);
 

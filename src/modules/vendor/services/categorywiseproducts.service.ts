@@ -14,8 +14,8 @@ export class CategoryProductsService {
         maxDistance: number,
         page: number,
         limit: number,
-        search: string
-    ) {
+        search: string,
+        vendorId?: string) {
         const skip = (page - 1) * limit;
 
         const { products, total } =
@@ -26,7 +26,8 @@ export class CategoryProductsService {
                 maxDistance,
                 skip,
                 limit,
-                search
+                search,
+                vendorId
             );
 
         return {

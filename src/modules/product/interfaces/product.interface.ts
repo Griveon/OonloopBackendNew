@@ -67,6 +67,7 @@ export interface IProduct {
     isActive?: boolean;
     isFeatured?: boolean;
     isTrending?: boolean;
+    isMainCatalogProduct: boolean;
     returnable?: boolean;
     ribbon?: Types.ObjectId;
     unit?: Types.ObjectId;

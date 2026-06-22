@@ -81,6 +81,11 @@ const productSchema = new Schema<IProduct>(
         minQty: { type: Number, default: 1 },
         slug: { type: String, required: true, unique: true },
         gst: gstSchema,
+        isMainCatalogProduct: {
+            type: Boolean,
+            default: true,
+            index: true,
+        },
     },
     { timestamps: true }
 );
@@ -88,6 +93,12 @@ const productSchema = new Schema<IProduct>(
 productSchema.virtual("totalStock").get(function () {
     if (!this.variants || this.variants.length === 0) return this.stock;
     return this.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+});
+
+productSchema.index({
+    name: "text",
+    description: "text",
+    slug: "text",
 });
 
 export const ProductModel: Model<IProduct> = mongoose.model<IProduct>("Product", productSchema);

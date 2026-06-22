@@ -8,7 +8,8 @@ export class UserProfileRepository {
     }
 
     async findByUserId(userId: string) {
-        return await UserProfileModel.findOne({ user: userId });
+        return await UserProfileModel.findOne({ user: userId })
+            .populate("user");
     }
 
     async update(userId: string, data: Partial<IUserProfile>) {
@@ -20,11 +21,25 @@ export class UserProfileRepository {
     }
 
     async addAddress(userId: string, address: any) {
-        return await UserProfileModel.findOneAndUpdate(
-            { user: userId },
-            { $push: { addresses: address } },
-            { new: true }
-        );
+        // 1. Ensure profile exists (create if missing)
+        let profile: any = await UserProfileModel.findOne({ user: userId });
+
+        if (!profile) {
+            profile = await UserProfileModel.create({
+                user: userId,
+                addresses: [],
+                preferences: {
+                    language: "en",
+                    notificationsEnabled: true,
+                },
+            });
+        }
+
+        profile.addresses.push(address);
+
+        await profile.save();
+
+        return profile;
     }
 
     async updateAddress(userId: string, addressId: string, data: any) {
