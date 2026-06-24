@@ -175,6 +175,20 @@ export class OrderSummuryService {
         }
         const coupons = [...perVendor.values()];
 
+        // Attach the seller's store name to each coupon so the UI can render it
+        // (coupon.vendorId is a User id, which the cart's vendor._id is not).
+        if (coupons.length) {
+            const profiles = await this.repo.getVendorStoreNames(
+                coupons.map((c) => c.vendorId)
+            );
+            const nameMap = new Map(
+                profiles.map((p: any) => [p.user.toString(), p.storeName])
+            );
+            for (const c of coupons) {
+                c.vendorName = nameMap.get(c.vendorId.toString()) ?? null;
+            }
+        }
+
         // ---------------------------------------------------------------
         // 4. Totals — service fee only, no GST, no delivery
         // ---------------------------------------------------------------
