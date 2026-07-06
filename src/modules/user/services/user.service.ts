@@ -221,16 +221,17 @@ export class UserService {
     }
 
     private async validateDriverProfileIfNeeded(user: any, role?: string) {
-        if (!role) {
-            return null;
-        }
-
         if (role !== "driver") {
             return null;
         }
 
-        if (user.role !== role) {
-            throw new Error("You are not registered as this role. Please check your role and try again.");
+        const userRoles =
+            Array.isArray(user.roles) && user.roles.length > 0
+                ? user.roles
+                : [user.role];
+
+        if (!userRoles.includes("driver")) {
+            throw new Error("You are not registered as driver. Please check your role and try again.");
         }
 
         const driverProfile = await this.userRepository.findDriverProfileByUserId(
@@ -252,7 +253,7 @@ export class UserService {
         if (isEmail) {
             user = await this.userRepository.findByEmail(identifier.toLowerCase().trim());
         } else {
-            user = await this.userRepository.findByMobileNumber(identifier);
+            user = await this.userRepository.findByMobileNumber(identifier.trim());
         }
 
         if (!user) {
@@ -267,17 +268,17 @@ export class UserService {
             throw new Error("Role is required");
         }
 
-        if (user.role !== role) {
-            throw new Error("You are not registered as this role. Please check your role and try again.");
-        }
+        const driverProfile = await this.validateDriverProfileIfNeeded(user, role);
 
         await this.userRepository.updateLastLogin(user._id.toString());
+
+        const tokenRole = role === "driver" ? "driver" : role;
 
         const token = jwt.sign(
             {
                 id: user._id,
                 email: user.email,
-                role: user.role,
+                role: tokenRole,
                 roles: user.roles,
             },
             process.env.JWT_SECRET as string,
@@ -296,7 +297,11 @@ export class UserService {
         } = user.toObject();
 
         return {
-            user: safeUser,
+            user: {
+                ...safeUser,
+                role: tokenRole,
+            },
+            driverProfile,
             token,
         };
     }
