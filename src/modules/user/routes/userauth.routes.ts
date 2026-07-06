@@ -13,7 +13,6 @@ const userController = new UserController();
 
 userAuthRoutes.post(
     "/signup",
-    validate(signupSchema),
     userSingupController.signup
 );
 userAuthRoutes.post(

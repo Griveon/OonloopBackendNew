@@ -74,6 +74,13 @@ const UserSchema: Schema<IUserDocument> = new Schema(
             default: "user",
         },
 
+        roles: {
+            type: [String],
+            enum: ["user", "vendor", "driver"],
+            default: ["user"],
+        },
+
+
         resetPasswordToken: {
             type: String,
         },
@@ -92,6 +99,20 @@ const UserSchema: Schema<IUserDocument> = new Schema(
         timestamps: true,
     }
 );
+
+UserSchema.pre("save", function (next) {
+    const user = this as any;
+
+    if (!Array.isArray(user.roles) || user.roles.length === 0) {
+        user.roles = [user.role || "user"];
+    }
+
+    if (user.role && !user.roles.includes(user.role)) {
+        user.roles.push(user.role);
+    }
+
+    user.roles = [...new Set(user.roles)];
+});
 
 export const UserModel: Model<IUserDocument> = mongoose.model<IUserDocument>(
     "User",

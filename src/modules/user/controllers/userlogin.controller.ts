@@ -12,11 +12,15 @@ export class UserLoginController {
 
     login = async (req: Request, res: Response) => {
         try {
-            const { identifier, pin } = req.body;
-            // console.log("Received login request with identifier:", identifier);
-            // console.log(identifier, pin)
+            const { identifier, pin, role } = req.body;
 
-            const data = await this.userService.login(identifier, pin);
+            if (!identifier || !pin) {
+                return res.status(400).json(
+                    ResponseUtil.badRequest("Identifier and PIN are required")
+                );
+            }
+
+            const data = await this.userService.login(identifier, pin, role);
 
             return res
                 .status(200)
@@ -54,15 +58,16 @@ export class UserLoginController {
 
     verifyOtp = async (req: Request, res: Response) => {
         try {
-            const { mobile, otp } = req.body;
+            const { mobile, otp, role } = req.body;
 
-            if (!mobile || !otp) {
+            if (!mobile || !otp || !role) {
                 return res.status(400).json(
-                    ResponseUtil.badRequest("Mobile and OTP are required")
+                    ResponseUtil.badRequest("Mobile, OTP, and role are required")
                 );
             }
 
-            const result = await this.userService.verifyOtp(mobile, otp);
+            const result = await this.userService.verifyOtp(mobile, otp, role);
+            // console.log("Result from verifyOtp:", result);
 
             return res.status(200).json(
                 ResponseUtil.success("Login successful", result)
@@ -77,7 +82,7 @@ export class UserLoginController {
 
     updatePin = async (req: Request, res: Response) => {
         try {
-            const { mobile, pin } = req.body;
+            const { mobile, pin, role } = req.body;
 
             if (!mobile || !pin) {
                 return res.status(400).json(
@@ -85,7 +90,7 @@ export class UserLoginController {
                 );
             }
 
-            const result = await this.userService.updatePin(mobile, pin);
+            const result = await this.userService.updatePin(mobile, pin, role);
 
             return res.status(200).json(
                 ResponseUtil.success("PIN updated successfully", result)

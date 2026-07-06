@@ -1,55 +1,98 @@
 import { VendorProfileModel } from "../models/vendorprofile.model.js";
 
 export class VendorKycRepository {
-
-    async findByVendorId(vendorId: string) {
-        const vendor = await VendorProfileModel.findById(vendorId);
-
-        if (!vendor) throw new Error("Vendor not found");
-
-        return vendor;
-    }
-
     async findByUserId(userId: string) {
-        const vendor = await VendorProfileModel.findOne(
-            { user: userId },
-            "kycDocuments isKycSubmitted isKycApproved"
-        );
+        const vendor = await VendorProfileModel.findOne({ user: userId });
 
-        if (!vendor) throw new Error("Vendor not found");
-
-        return vendor;
-    }
-
-    async updateKycDocuments(vendorId: string, docs: any) {
-        const updateQuery: any = {};
-
-        for (const key in docs) {
-            updateQuery[`kycDocuments.${key}`] = docs[key];
+        if (!vendor) {
+            throw new Error("Vendor profile not found");
         }
 
-        updateQuery["isKycSubmitted"] = true;
+        return vendor;
+    }
 
-        return await VendorProfileModel.findByIdAndUpdate(
-            vendorId,
-            { $set: updateQuery },
-            { new: true }
+    async findFullKycByUserId(userId: string) {
+        const vendor = await VendorProfileModel.findOne({ user: userId }).select(
+            "user kycDocuments isKycSubmitted isKycApproved isVerified profileStatus"
         );
+
+        if (!vendor) {
+            throw new Error("Vendor profile not found");
+        }
+
+        return vendor;
+    }
+
+    async findKycStatusByUserId(userId: string) {
+        const vendor = await VendorProfileModel.findOne({ user: userId }).select(
+            "kycDocuments isKycSubmitted isKycApproved isVerified profileStatus"
+        );
+
+        if (!vendor) {
+            throw new Error("Vendor profile not found");
+        }
+
+        return vendor;
+    }
+
+    async updateKycDocuments(vendorId: string, docs: Record<string, any>) {
+        const setPayload: Record<string, any> = {};
+
+        for (const key of Object.keys(docs)) {
+            setPayload[`kycDocuments.${key}`] = docs[key];
+        }
+
+        setPayload.isKycSubmitted = true;
+        setPayload.isKycApproved = false;
+
+        /**
+         * Keep vendor pending after new upload.
+         * If previously rejected, this moves it back to pending for re-review.
+         */
+        setPayload.profileStatus = "pending";
+        setPayload.isVerified = false;
+
+        const vendor = await VendorProfileModel.findByIdAndUpdate(
+            vendorId,
+            {
+                $set: setPayload,
+            },
+            {
+                new: true,
+                runValidators: true,
+            }
+        );
+
+        if (!vendor) {
+            throw new Error("Vendor profile not found");
+        }
+
+        return vendor;
     }
 
     async removeDocument(userId: string, docKey: string) {
-        const vendor: any = await VendorProfileModel.findOne({ user: userId });
+        const vendor = await VendorProfileModel.findOneAndUpdate(
+            { user: userId },
+            {
+                $unset: {
+                    [`kycDocuments.${docKey}`]: "",
+                },
+                $set: {
+                    isKycSubmitted: false,
+                    isKycApproved: false,
+                    isVerified: false,
+                    profileStatus: "pending",
+                },
+            },
+            {
+                new: true,
+            }
+        );
 
-        if (!vendor) throw new Error("Vendor not found");
-
-        if (!vendor.kycDocuments?.[docKey]) {
-            throw new Error("Document not found");
+        if (!vendor) {
+            throw new Error("Vendor profile not found");
         }
 
-        vendor.kycDocuments[docKey] = undefined;
-
-        await vendor.save();
-
-        return docKey;
+        return vendor;
     }
 }

@@ -21,7 +21,7 @@ requiredEnv.forEach((key) => {
 /**
  * Cloudflare R2 Client
  */
-export const r2Client = new S3Client({
+export const r2Client:any = new S3Client({
     region: "auto",
     endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: {

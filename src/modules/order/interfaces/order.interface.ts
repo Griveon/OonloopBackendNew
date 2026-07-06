@@ -1,12 +1,20 @@
 import { Document, Types } from "mongoose";
 
+/**
+ * Parent/customer order status.
+ * This status represents the overall order from customer point of view.
+ */
 export type OrderStatus =
     | "pending"
     | "placed"
-    | "confirmed"
-    | "packed"
+    | "processing"
+    | "partially_ready"
+    | "ready_for_pickup"
+    | "partially_shipped"
     | "shipped"
+    | "partially_delivered"
     | "delivered"
+    | "partially_cancelled"
     | "cancelled"
     | "returned";
 
@@ -16,17 +24,24 @@ export type PaymentStatus =
     | "failed"
     | "refunded";
 
-export type DeliveryStatus =
-    | "not_assigned"
-    | "assigned"
-    | "pickup_pending"
-    | "picked_up"
-    | "out_for_delivery"
-    | "delivered"
-    | "failed"
-    | "returned";
+export type PaymentMode =
+    | "cod"
+    | "online";
+
+export type OrderType =
+    | "single_vendor"
+    | "multi_vendor";
+
+export type TrackingUpdatedByRole =
+    | "user"
+    | "vendor"
+    | "driver"
+    | "admin"
+    | "system";
 
 export interface IOrderItem {
+    vendor: Types.ObjectId;
+
     product: Types.ObjectId;
     variant?: Types.ObjectId;
 
@@ -57,21 +72,44 @@ export interface IAddress {
 }
 
 export interface ITrackingHistory {
+    title?: string;
     status: string;
     remark?: string;
+
     updatedBy?: Types.ObjectId;
+    updatedByRole?: TrackingUpdatedByRole;
+
     updatedAt?: Date;
 }
 
 export interface IOrder {
+    /**
+     * Customer who placed the order
+     */
     user: Types.ObjectId;
-    vendor: Types.ObjectId;
 
-    // Driver
-    driver?: Types.ObjectId;
+    /**
+     * Kept only for backward compatibility.
+     * For new multi-vendor orders, use vendors[].
+     * For single-vendor order, this can contain that seller id.
+     */
+    vendor?: Types.ObjectId;
+
+    /**
+     * All vendors involved in this parent order.
+     */
+    vendors?: Types.ObjectId[];
+
+    orderType?: OrderType;
+
+    vendorOrderCount?: number;
 
     orderNumber: string;
 
+    /**
+     * Parent order can still store all items for customer order detail.
+     * Every item must contain vendor id.
+     */
     items: IOrderItem[];
 
     billingAddress?: IAddress;
@@ -82,38 +120,30 @@ export interface IOrder {
 
     subtotal: number;
     discount?: number;
-    gstAmount?: number;
+
     gstRuleId?: Types.ObjectId;
+    gstAmount?: number;
+
     shippingCharge?: number;
     totalAmount: number;
 
     paymentStatus: PaymentStatus;
-    paymentMode?: "cod" | "online";
+    paymentMode?: PaymentMode;
 
-    // Order lifecycle
+    /**
+     * Overall customer-facing order status.
+     * Seller/driver status will be handled in OrderVendorModel.
+     */
     status: OrderStatus;
 
-    // Delivery lifecycle
-    deliveryStatus?: DeliveryStatus;
-
-    tracking?: string;
-    courierName?: string;
-
-    shippedAt?: Date;
-    deliveredAt?: Date;
-    cancelledAt?: Date;
-
-    // Driver timestamps
-    driverAssignedAt?: Date;
-    pickedUpAt?: Date;
-    outForDeliveryAt?: Date;
-
-    // OTP verification
-    deliveryOtp?: string;
-    otpVerified?: boolean;
-
-    // Tracking timeline
+    /**
+     * Basic tracking for parent/customer order.
+     * Detailed seller/driver tracking will be in OrderVendorModel.
+     */
     trackingHistory?: ITrackingHistory[];
+
+    cancellationReason?: string;
+    failureReason?: string;
 
     notes?: string;
 

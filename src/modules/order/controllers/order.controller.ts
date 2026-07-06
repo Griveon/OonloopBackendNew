@@ -8,11 +8,14 @@ export class OrderController {
     create = async (req: Request, res: Response) => {
         try {
             const order = await this.service.create(req.body);
+
             return res
                 .status(201)
                 .json(ResponseUtil.created("Order created successfully", order));
         } catch (error: any) {
-            return res.status(400).json(ResponseUtil.badRequest(error.message));
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
         }
     };
 
@@ -20,9 +23,18 @@ export class OrderController {
         try {
             const page = Number(req.query.page) || 1;
             const limit = Number(req.query.limit) || 10;
-            const filter = req.query.filter
-                ? JSON.parse(req.query.filter as string)
-                : {};
+
+            let filter = {};
+
+            if (req.query.filter) {
+                try {
+                    filter = JSON.parse(req.query.filter as string);
+                } catch {
+                    return res
+                        .status(400)
+                        .json(ResponseUtil.badRequest("Invalid filter JSON"));
+                }
+            }
 
             const orders = await this.service.getAll(page, limit, filter);
 
@@ -30,47 +42,61 @@ export class OrderController {
                 .status(200)
                 .json(ResponseUtil.success("Orders fetched successfully", orders));
         } catch (error: any) {
-            return res.status(500).json(ResponseUtil.serverError(error.message));
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
         }
     };
 
     getById = async (req: Request, res: Response) => {
         try {
             const order = await this.service.getById(req.params.id);
+
             return res
                 .status(200)
                 .json(ResponseUtil.success("Order fetched successfully", order));
         } catch (error: any) {
-            return res.status(404).json(ResponseUtil.notFound(error.message));
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
         }
     };
 
-    // controllers/order.controller.ts
-
-    getVendorOrders = async (req: Request, res: Response) => {
+    getMyOrders = async (req: Request, res: Response) => {
         try {
-            const vendorId = (req as any).user._id;
+            const userId = (req as any).user?._id || (req as any).user?.id;
+
+            if (!userId) {
+                return res
+                    .status(401)
+                    .json(ResponseUtil.unauthorized("Unauthorized user"));
+            }
 
             const page = Number(req.query.page) || 1;
             const limit = Number(req.query.limit) || 10;
 
-            const filter = req.query.filter
-                ? JSON.parse(req.query.filter as string)
-                : {};
+            let filter = {};
 
-            const orders = await this.service.getVendorOrders(
-                vendorId,
+            if (req.query.filter) {
+                try {
+                    filter = JSON.parse(req.query.filter as string);
+                } catch {
+                    return res
+                        .status(400)
+                        .json(ResponseUtil.badRequest("Invalid filter JSON"));
+                }
+            }
+
+            const orders = await this.service.getUserOrders(
+                userId,
                 page,
                 limit,
                 filter
             );
 
-            return res.status(200).json(
-                ResponseUtil.success(
-                    "Vendor orders fetched successfully",
-                    orders
-                )
-            );
+            return res
+                .status(200)
+                .json(ResponseUtil.success("User orders fetched successfully", orders));
         } catch (error: any) {
             return res
                 .status(500)
@@ -81,22 +107,48 @@ export class OrderController {
     update = async (req: Request, res: Response) => {
         try {
             const order = await this.service.update(req.params.id, req.body);
+
             return res
                 .status(200)
                 .json(ResponseUtil.success("Order updated successfully", order));
         } catch (error: any) {
-            return res.status(400).json(ResponseUtil.badRequest(error.message));
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    updateStatus = async (req: Request, res: Response) => {
+        try {
+            const { status } = req.body;
+
+            const order = await this.service.updateStatus(
+                req.params.id,
+                status
+            );
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Order status updated successfully", order));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
         }
     };
 
     delete = async (req: Request, res: Response) => {
         try {
             await this.service.delete(req.params.id);
+
             return res
                 .status(200)
                 .json(ResponseUtil.success("Order deleted successfully", null));
         } catch (error: any) {
-            return res.status(404).json(ResponseUtil.notFound(error.message));
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
         }
     };
+    
 }

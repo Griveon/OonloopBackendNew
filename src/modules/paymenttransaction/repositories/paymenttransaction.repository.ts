@@ -1,6 +1,7 @@
 import { PaymentTransactionModel } from "../models/paymenttransaction.model.js";
 import type { IPaymentTransaction } from "../interfaces/paymenttransaction.interface.js";
 import { OrderModel } from "../../order/models/order.model.js";
+import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 
 export class PaymentTransactionRepository {
 
@@ -19,7 +20,7 @@ export class PaymentTransactionRepository {
             isActive: true,
         });
     }
-    
+
     async findOrderById(id: string) {
         return await OrderModel.findOne({
             _id: id,
@@ -66,27 +67,105 @@ export class PaymentTransactionRepository {
         );
     }
 
-    // order.repository.ts
     async markOrderPaid(orderId: string, transactionId: string) {
-        return await OrderModel.findByIdAndUpdate(
+        const paidAt = new Date();
+
+        const updatedOrder = await OrderModel.findByIdAndUpdate(
             orderId,
             {
-                paymentTransaction: transactionId,
-                status: "placed",
-                paymentStatus: "success",
+                $set: {
+                    paymentTransaction: transactionId,
+                    paymentStatus: "success",
+                    status: "placed",
+                    updatedAt: paidAt,
+                },
+                $push: {
+                    trackingHistory: {
+                        title: "Payment successful",
+                        status: "placed",
+                        remark: "Payment successful and order placed",
+                        updatedByRole: "system",
+                        updatedAt: paidAt,
+                    },
+                },
             },
             { new: true }
         );
+
+        await OrderVendorModel.updateMany(
+            {
+                parentOrder: orderId,
+                isActive: true,
+            },
+            {
+                $set: {
+                    paymentTransaction: transactionId,
+                    paymentStatus: "success",
+                    status: "placed",
+                    updatedAt: paidAt,
+                },
+                $push: {
+                    trackingHistory: {
+                        title: "Payment successful",
+                        status: "placed",
+                        remark: "Payment successful and vendor order placed",
+                        updatedByRole: "system",
+                        updatedAt: paidAt,
+                    },
+                },
+            }
+        );
+
+        return updatedOrder;
     }
 
     async markOrderFailed(orderId: string) {
-        return await OrderModel.findByIdAndUpdate(
+        const failedAt = new Date();
+
+        const updatedOrder = await OrderModel.findByIdAndUpdate(
             orderId,
             {
-                status: "cancelled",
+                $set: {
+                    status: "cancelled",
+                    paymentStatus: "failed",
+                    updatedAt: failedAt,
+                },
+                $push: {
+                    trackingHistory: {
+                        title: "Payment failed",
+                        status: "cancelled",
+                        remark: "Payment failed and order cancelled",
+                        updatedByRole: "system",
+                        updatedAt: failedAt,
+                    },
+                },
             },
             { new: true }
         );
-    }
 
+        await OrderVendorModel.updateMany(
+            {
+                parentOrder: orderId,
+                isActive: true,
+            },
+            {
+                $set: {
+                    status: "cancelled",
+                    paymentStatus: "failed",
+                    updatedAt: failedAt,
+                },
+                $push: {
+                    trackingHistory: {
+                        title: "Payment failed",
+                        status: "cancelled",
+                        remark: "Payment failed and vendor order cancelled",
+                        updatedByRole: "system",
+                        updatedAt: failedAt,
+                    },
+                },
+            }
+        );
+
+        return updatedOrder;
+    }
 }

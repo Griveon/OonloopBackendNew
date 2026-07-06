@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import type { IUser } from "../interfaces/user.interface.js";
 import { UserRepository } from "../repositories/user.repository.js";
-import jwt from "jsonwebtoken";
 import { sendWhatsAppOtp } from "../../../utils/sendWhatsAppOtp.util.js";
 
 export class UserService {
@@ -11,8 +11,18 @@ export class UserService {
         this.userRepository = new UserRepository();
     }
 
-    async createUser(data: IUser) {
+    async createUser(data: any) {
         data.email = data.email.toLowerCase().trim();
+
+        if (data.mobileNumber) {
+            data.mobileNumber = data.mobileNumber.trim();
+        }
+
+        const role = data.role || "user";
+
+        if (!["user", "vendor", "driver"].includes(role)) {
+            throw new Error("Invalid role value");
+        }
 
         if (!data.firstName || data.firstName.trim().length < 2) {
             throw new Error("First name must be at least 2 characters");
@@ -26,19 +36,11 @@ export class UserService {
             throw new Error("Email is required");
         }
 
-        const existingEmail = await this.userRepository.findByEmail(data.email);
-        if (existingEmail) {
-            throw new Error("Email already registered");
+        if (data.mobileNumber && !/^[6-9]\d{9}$/.test(data.mobileNumber)) {
+            throw new Error("Invalid mobile number");
         }
 
-        if (data.mobileNumber) {
-            const existingMobile = await this.userRepository.findByMobileNumber(data.mobileNumber);
-            if (existingMobile) {
-                throw new Error("Mobile number already registered");
-            }
-        }
-
-        if (data.gender && !["male", "female", "other"].includes(data.gender.toLowerCase())) {
+        if (data.gender && !["male", "female", "other"].includes(data.gender)) {
             throw new Error("Invalid gender value");
         }
 
@@ -46,22 +48,157 @@ export class UserService {
             throw new Error("Invalid date of birth");
         }
 
+        if (data.pin && !/^\d{6}$/.test(data.pin)) {
+            throw new Error("PIN must be exactly 6 digits");
+        }
+
+        const existingEmailUser: any = await this.userRepository.findByEmail(data.email);
+
+        /**
+         * CASE 1:
+         * Same email already exists.
+         *
+         * If same role already exists => error.
+         * If different role => add new role into roles array.
+         */
+        if (existingEmailUser) {
+            const existingRoles =
+                Array.isArray(existingEmailUser.roles) && existingEmailUser.roles.length > 0
+                    ? existingEmailUser.roles
+                    : [existingEmailUser.role];
+
+            if (existingRoles.includes(role)) {
+                throw new Error(`Email already registered as ${role}`);
+            }
+
+            if (data.mobileNumber) {
+                if (
+                    existingEmailUser.mobileNumber &&
+                    existingEmailUser.mobileNumber !== data.mobileNumber
+                ) {
+                    throw new Error("This email is already registered with another mobile number");
+                }
+
+                const existingMobileUser: any =
+                    await this.userRepository.findByMobileNumber(data.mobileNumber);
+
+                if (
+                    existingMobileUser &&
+                    existingMobileUser._id.toString() !== existingEmailUser._id.toString()
+                ) {
+                    throw new Error("Mobile number already registered with another account");
+                }
+            }
+
+            await this.userRepository.addRoleToUser(
+                existingEmailUser._id.toString(),
+                role as "user" | "vendor" | "driver"
+            );
+
+            const updatedUser: any = await this.userRepository.updateUserBasicInfoIfMissing(
+                existingEmailUser._id.toString(),
+                {
+                    mobileNumber: !existingEmailUser.mobileNumber
+                        ? data.mobileNumber
+                        : undefined,
+                    dateOfBirth: !existingEmailUser.dateOfBirth
+                        ? data.dateOfBirth
+                        : undefined,
+                    gender: !existingEmailUser.gender
+                        ? data.gender
+                        : undefined,
+                    pin: !existingEmailUser.pin
+                        ? data.pin
+                        : undefined,
+                }
+            );
+
+            const token = jwt.sign(
+                {
+                    id: updatedUser._id,
+                    email: updatedUser.email,
+                    role,
+                    roles: updatedUser.roles,
+                },
+                process.env.JWT_SECRET as string,
+                {
+                    expiresIn: "7d",
+                }
+            );
+
+            const {
+                password,
+                otp,
+                otpExpiry,
+                resetPasswordToken,
+                resetPasswordExpire,
+                ...safeUser
+            } = updatedUser.toObject();
+
+            return {
+                message: `${role} role added successfully`,
+                user: safeUser,
+                token,
+            };
+        }
+
+        /**
+         * CASE 2:
+         * New email.
+         * Create fresh user.
+         */
+        if (data.mobileNumber) {
+            const existingMobile = await this.userRepository.findByMobileNumber(
+                data.mobileNumber
+            );
+
+            if (existingMobile) {
+                throw new Error("Mobile number already registered");
+            }
+        }
+
         const hashedPassword = await bcrypt.hash(data.password, 10);
 
         const user = await this.userRepository.createUser({
             ...data,
-            password: hashedPassword
+            firstName: data.firstName.trim(),
+            lastName: data.lastName?.trim() || "",
+            email: data.email,
+            mobileNumber: data.mobileNumber,
+            gender: data.gender,
+            role: role as "user" | "vendor" | "driver",
+            roles: [role as "user" | "vendor" | "driver"],
+            password: hashedPassword,
         });
 
         const token = jwt.sign(
-            { id: user._id, email: user.email },
+            {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                roles: user.roles,
+            },
             process.env.JWT_SECRET as string,
-            { expiresIn: "7d" }
+            {
+                expiresIn: "7d",
+            }
         );
 
-        return { user, token };
-    }
+        const {
+            password,
+            otp,
+            otpExpiry,
+            resetPasswordToken,
+            resetPasswordExpire,
+            ...safeUser
+        } = user.toObject();
 
+        return {
+            message: "User registered successfully",
+            user: safeUser,
+            token,
+        };
+    }
 
     async getUserById(userId: string) {
         const user = await this.userRepository.findById(userId);
@@ -83,14 +220,37 @@ export class UserService {
         return await this.userRepository.updateLastLogin(userId);
     }
 
-    async login(identifier: string, password: string) {
+    private async validateDriverProfileIfNeeded(user: any, role?: string) {
+        if (!role) {
+            return null;
+        }
 
-        let user;
+        if (role !== "driver") {
+            return null;
+        }
+
+        if (user.role !== role) {
+            throw new Error("You are not registered as this role. Please check your role and try again.");
+        }
+
+        const driverProfile = await this.userRepository.findDriverProfileByUserId(
+            user._id.toString()
+        );
+
+        if (!driverProfile) {
+            throw new Error("Driver profile not found. Please complete driver registration first");
+        }
+
+        return driverProfile;
+    }
+
+    async login(identifier: string, pin: string, role?: string) {
+        let user: any;
 
         const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
 
         if (isEmail) {
-            user = await this.userRepository.findByEmail(identifier);
+            user = await this.userRepository.findByEmail(identifier.toLowerCase().trim());
         } else {
             user = await this.userRepository.findByMobileNumber(identifier);
         }
@@ -99,43 +259,61 @@ export class UserService {
             throw new Error("User does not exist");
         }
 
-        // const isMatch = await bcrypt.compare(password, user.password);
-        // if (!isMatch) {
-        //     throw new Error("Invalid credentials");
-        // }
-
-        if (user?.pin !== password) {
+        if (user.pin !== pin) {
             throw new Error("Invalid credentials");
+        }
+
+        if (!role) {
+            throw new Error("Role is required");
+        }
+
+        if (user.role !== role) {
+            throw new Error("You are not registered as this role. Please check your role and try again.");
         }
 
         await this.userRepository.updateLastLogin(user._id.toString());
 
         const token = jwt.sign(
-            { id: user._id, email: user.email },
+            {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                roles: user.roles,
+            },
             process.env.JWT_SECRET as string,
-            { expiresIn: "7d" }
+            {
+                expiresIn: "7d",
+            }
         );
 
-        const { password: _, ...safeUser } = user.toObject();
+        const {
+            password,
+            otp,
+            otpExpiry,
+            resetPasswordToken,
+            resetPasswordExpire,
+            ...safeUser
+        } = user.toObject();
 
         return {
             user: safeUser,
-            token
+            token,
         };
     }
-    async updateProfile(userId: string, data: Partial<IUser>) {
 
+    async updateProfile(userId: string, data: Partial<IUser>) {
         const user = await this.userRepository.findById(userId);
+
         if (!user) {
             throw new Error("User not found");
         }
 
-        // Email update check
         if (data.email) {
             const email = data.email.toLowerCase().trim();
 
             if (email !== user.email) {
                 const existing = await this.userRepository.findByEmail(email);
+
                 if (existing) {
                     throw new Error("Email already in use");
                 }
@@ -144,32 +322,30 @@ export class UserService {
             data.email = email;
         }
 
-        // Mobile number check
         if (data.mobileNumber) {
             if (data.mobileNumber !== user.mobileNumber) {
-                const existingMobile = await this.userRepository.findByMobileNumber(data.mobileNumber);
+                const existingMobile = await this.userRepository.findByMobileNumber(
+                    data.mobileNumber
+                );
+
                 if (existingMobile) {
                     throw new Error("Mobile number already in use");
                 }
             }
         }
 
-        // Validate name
         if (data.firstName && data.firstName.trim().length < 2) {
             throw new Error("First name must be at least 2 characters");
         }
 
-        // Validate gender
         if (data.gender && !["male", "female", "other"].includes(data.gender)) {
             throw new Error("Invalid gender");
         }
 
-        // Validate DOB
         if (data.dateOfBirth && isNaN(new Date(data.dateOfBirth).getTime())) {
             throw new Error("Invalid date of birth");
         }
 
-        // 🚫 Prevent sensitive updates
         delete data.password;
         delete data.role;
         delete data.resetPasswordToken;
@@ -196,7 +372,7 @@ export class UserService {
         await this.userRepository.updateOtp(
             user._id.toString(),
             otp,
-            Date.now() + 5 * 60 * 1000 // 5 minutes
+            Date.now() + 5 * 60 * 1000
         );
 
         await sendWhatsAppOtp({
@@ -204,14 +380,24 @@ export class UserService {
             otp,
         });
 
-        return { message: "OTP sent successfully" };
+        return {
+            message: "OTP sent successfully",
+        };
     }
 
-    async verifyOtp(mobile: string, otp: string) {
+    async verifyOtp(mobile: string, otp: string, role?: string) {
         const user: any = await this.userRepository.findByMobileNumber(mobile);
 
         if (!user) {
             throw new Error("User not found");
+        }
+
+        if (!role) {
+            throw new Error("Role is required");
+        }
+
+        if (user.role !== role) {
+            throw new Error("You are not registered as this role. Please check your role and try again.");
         }
 
         if (!user.otp || !user.otpExpiry) {
@@ -226,53 +412,100 @@ export class UserService {
             throw new Error("Invalid OTP");
         }
 
-        // ✅ Clear OTP after success
+        const driverProfile = await this.validateDriverProfileIfNeeded(user, role);
+
         await this.userRepository.clearOtp(user._id.toString());
 
-        // ✅ Update last login
         await this.userRepository.updateLastLogin(user._id.toString());
 
-        // ✅ Generate JWT
         const token = jwt.sign(
-            { id: user._id, email: user.email },
+            {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                roles: user.roles,
+            },
             process.env.JWT_SECRET as string,
-            { expiresIn: "7d" }
+            {
+                expiresIn: "7d",
+            }
         );
 
-        const { password, otp: _, otpExpiry, ...safeUser } = user.toObject();
+        const {
+            password,
+            otp: _,
+            otpExpiry,
+            resetPasswordToken,
+            resetPasswordExpire,
+            ...safeUser
+        } = user.toObject();
 
         return {
             user: safeUser,
+            driverProfile,
             token,
         };
     }
 
-    async updatePin(mobile: string, pin: string) {
+    async updatePin(mobile: string, pin: string, role?: string) {
         if (!mobile) {
             throw new Error("Mobile number is required");
         }
 
-        if (!pin || pin.length !== 6) {
+        if (!pin || !/^\d{6}$/.test(pin)) {
             throw new Error("PIN must be exactly 6 digits");
         }
 
-        const user = await this.userRepository.findByMobileNumber(mobile);
+        if (!role) {
+            throw new Error("Role is required");
+        }
+
+        const user: any = await this.userRepository.findByMobileNumber(mobile.trim());
 
         if (!user) {
             throw new Error("User not found");
         }
 
-        // Optional: hash PIN (recommended for security)
-        // const hashedPin = await bcrypt.hash(pin, 10);
+        if (user.role !== role) {
+            throw new Error("You are not registered as this role. Please check your role and try again.");
+        }
 
-        const updatedUser = await this.userRepository.updatePinByMobile(
-            mobile,
+        const updatedUser: any = await this.userRepository.updatePinByMobile(
+            mobile.trim(),
             pin
         );
 
+        if (!updatedUser) {
+            throw new Error("Unable to update PIN");
+        }
+
+        await this.userRepository.updateLastLogin(updatedUser._id.toString());
+
+        const token = jwt.sign(
+            {
+                id: updatedUser._id,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                roles: updatedUser.roles,
+            },
+            process.env.JWT_SECRET as string,
+            {
+                expiresIn: "7d",
+            }
+        );
+
+        const {
+            password,
+            otp,
+            otpExpiry,
+            resetPasswordToken,
+            resetPasswordExpire,
+            ...safeUser
+        } = updatedUser.toObject();
+
         return {
-            message: "PIN updated successfully",
-            userId: updatedUser?._id,
+            user: safeUser,
+            token,
         };
     }
 
@@ -283,9 +516,14 @@ export class UserService {
             throw new Error("User not found");
         }
 
-        // ✅ Remove sensitive fields
-        const { password, otp, otpExpiry, resetPasswordToken, resetPasswordExpire, ...safeUser } =
-            user.toObject();
+        const {
+            password,
+            otp,
+            otpExpiry,
+            resetPasswordToken,
+            resetPasswordExpire,
+            ...safeUser
+        } = user.toObject();
 
         return safeUser;
     }

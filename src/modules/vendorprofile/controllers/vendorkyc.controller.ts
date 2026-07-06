@@ -29,9 +29,13 @@ export class VendorKycController {
                     .json(ResponseUtil.badRequest("Vendor profile not found"));
             }
 
-            const files: Express.Multer.File[] = Array.isArray(req.files)
-                ? req.files
-                : (req.files as any)?.kycDocuments || [];
+            let files: Express.Multer.File[] = [];
+
+            if (Array.isArray(req.files)) {
+                files = req.files;
+            } else if (req.files && typeof req.files === "object") {
+                files = Object.values(req.files).flat() as Express.Multer.File[];
+            }
 
             if (!files.length) {
                 return res
@@ -44,6 +48,12 @@ export class VendorKycController {
                 vendor._id.toString()
             );
 
+            if (!uploadedDocs || Object.keys(uploadedDocs).length === 0) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("No valid KYC documents uploaded"));
+            }
+
             const updatedVendor = await this.service.upload(
                 vendor._id.toString(),
                 uploadedDocs
@@ -51,12 +61,21 @@ export class VendorKycController {
 
             return res.status(201).json(
                 ResponseUtil.created(
-                    "KYC documents uploaded successfully",
-                    updatedVendor!.kycDocuments
+                    "Vendor KYC documents uploaded successfully",
+                    {
+                        vendorId: updatedVendor._id,
+                        user: updatedVendor.user,
+                        isKycSubmitted: updatedVendor.isKycSubmitted,
+                        isKycApproved: updatedVendor.isKycApproved,
+                        isVerified: updatedVendor.isVerified,
+                        profileStatus: updatedVendor.profileStatus,
+                        kycDocuments: updatedVendor.kycDocuments,
+                    }
                 )
             );
         } catch (error: any) {
-            console.error(error);
+            console.error("Vendor KYC upload error:", error);
+
             return res
                 .status(500)
                 .json(ResponseUtil.serverError(error.message));
@@ -77,8 +96,35 @@ export class VendorKycController {
 
             return res
                 .status(200)
-                .json(ResponseUtil.success("KYC documents fetched", documents));
+                .json(ResponseUtil.success("Vendor KYC documents fetched", documents));
         } catch (error: any) {
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
+        }
+    };
+
+    getKycDocumentsWithPreview = async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id;
+
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("User not authenticated"));
+            }
+
+            const documents = await this.service.getKycDocumentsWithPreview(userId);
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Vendor KYC documents preview URLs fetched",
+                    documents
+                )
+            );
+        } catch (error: any) {
+            console.error("Vendor KYC preview error:", error);
+
             return res
                 .status(404)
                 .json(ResponseUtil.notFound(error.message));
@@ -88,7 +134,7 @@ export class VendorKycController {
     deleteKycDocument = async (req: Request, res: Response) => {
         try {
             const userId = req.user?.id;
-            const docKey: any = req.params.docKey;
+            const docKey = req.params.docKey;
 
             if (!userId) {
                 return res
@@ -102,14 +148,33 @@ export class VendorKycController {
                     .json(ResponseUtil.badRequest("Document key is required"));
             }
 
-            const deleted = await this.service.deleteKycDocument(
-                userId,
-                docKey
-            );
+            const deleted = await this.service.deleteKycDocument(userId, docKey);
 
             return res
                 .status(200)
-                .json(ResponseUtil.success("KYC document deleted", deleted));
+                .json(ResponseUtil.success("Vendor KYC document deleted", deleted));
+        } catch (error: any) {
+            return res
+                .status(404)
+                .json(ResponseUtil.notFound(error.message));
+        }
+    };
+
+    checkKycStatus = async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id;
+
+            if (!userId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("User not authenticated"));
+            }
+
+            const status = await this.service.checkKycStatus(userId);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Vendor KYC status fetched", status));
         } catch (error: any) {
             return res
                 .status(404)

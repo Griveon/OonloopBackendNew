@@ -9,6 +9,24 @@ const kycDocumentSchema = new Schema(
             trim: true,
         },
 
+        fileKey: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+
+        originalName: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        mimeType: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
         status: {
             type: String,
             enum: ["pending", "approved", "rejected"],

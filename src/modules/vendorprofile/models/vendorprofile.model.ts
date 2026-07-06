@@ -53,14 +53,46 @@ const storeAddressSchema = new Schema(
 
 const kycDocumentSchema = new Schema(
     {
-        fileUrl: { type: String, required: true },
+        fileUrl: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+
+        fileKey: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        originalName: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        mimeType: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
         status: {
             type: String,
             enum: ["pending", "approved", "rejected"],
             default: "pending",
         },
-        adminRemark: { type: String, default: "" },
-        updatedAt: { type: Date, default: Date.now },
+
+        adminRemark: {
+            type: String,
+            default: "",
+            trim: true,
+        },
+
+        updatedAt: {
+            type: Date,
+            default: Date.now,
+        },
     },
     { _id: false }
 );

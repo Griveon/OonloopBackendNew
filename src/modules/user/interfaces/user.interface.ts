@@ -18,10 +18,11 @@ export interface IUser {
     isEmailVerified: boolean;
     emailVerificationToken?: string;
 
-    role: UserRole;
+    role?: UserRole;
     pin: string;
 
     resetPasswordToken?: string;
+    roles?: UserRole[];
     resetPasswordExpire?: Date;
 
     lastLogin?: Date;

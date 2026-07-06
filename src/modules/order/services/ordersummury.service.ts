@@ -91,12 +91,12 @@ export class OrderSummuryService {
                 images: [{ url: variantImage || productImage }],
                 variant: variant
                     ? {
-                          _id: variant._id,
-                          price: variant.price,
-                          unitValue: variant.unitValue,
-                          stock: variant.stock,
-                          attributes: variant.attributes,
-                      }
+                        _id: variant._id,
+                        price: variant.price,
+                        unitValue: variant.unitValue,
+                        stock: variant.stock,
+                        attributes: variant.attributes,
+                    }
                     : null,
                 mrp: product.mrp,
                 price,
@@ -192,21 +192,39 @@ export class OrderSummuryService {
         // ---------------------------------------------------------------
         // 4. Totals — service fee only, no GST, no delivery
         // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // 4. Totals — delivery fee + platform fee + GST on both
+        // ---------------------------------------------------------------
         const totalDiscount = round(
             coupons
                 .filter((c) => c.applied)
                 .reduce((s, c) => s + c.discount, 0)
         );
 
-        const serviceFee = 49;
-        const totalAmount = round(subtotal - totalDiscount + serviceFee);
+        const deliveryFee = 49;
+        const platformFee = 7;
+
+        const gstRate = 18;
+        const feeGst = round(((deliveryFee + platformFee) * gstRate) / 100);
+
+        const totalAmount = round(
+            subtotal - totalDiscount + deliveryFee + platformFee + feeGst
+        );
+
+        const vendorId = summaryItems[0]?.vendorId || null;
 
         return {
+            vendorId,
             items: summaryItems,
             coupons,
             subtotal: round(subtotal),
             totalDiscount,
-            serviceFee: round(serviceFee),
+
+            deliveryFee: round(deliveryFee),
+            platformFee: round(platformFee),
+            gstRate,
+            feeGst,
+
             totalAmount,
         };
     }

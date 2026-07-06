@@ -51,4 +51,10 @@ vendorRoutes.get(
     categoryProductsController.getCategoryProducts
 );
 
+vendorRoutes.get(
+    "/category-subcategories",
+    categoryProductsController.getSubCategories
+);
+
+
 export default vendorRoutes;
