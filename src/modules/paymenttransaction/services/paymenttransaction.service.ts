@@ -100,7 +100,9 @@ export class PaymentTransactionService {
     async createOrderTransaction(data: any) {
         const { paymentMethod, providerConnection, amount, currency, userId, orderId } = data;
 
-        if (!paymentMethod || !providerConnection || !amount || !userId || !orderId) {
+        // orderId required (both real + demo need it); providerConnection is
+        // validated later so the demo path (no gateway) can skip it.
+        if (!paymentMethod || !amount || !userId || !orderId) {
             throw new Error("Missing required fields");
         }
 
@@ -112,6 +114,34 @@ export class PaymentTransactionService {
 
         if (!method || method.isDeleted || !method.isActive) {
             throw new Error("Invalid payment method");
+        }
+
+        // ----- DEV-ONLY demo payment: no gateway; confirmed at /verifyorder -----
+        if ((method as any).isDemo) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const stamp = Date.now();
+            const txn = await this.repo.create({
+                paymentMethod,
+                amount: amount / 100,
+                currency: currency || "INR",
+                externalOrderId: `DEMO-${stamp}`,
+                status: "pending",
+                metadata: { userId, orderId, demo: true },
+            });
+            return {
+                orderId: `DEMO-${stamp}`,
+                amount,
+                currency: currency || "INR",
+                key: "demo",
+                transactionId: txn._id,
+                demo: true,
+            };
+        }
+
+        if (!providerConnection) {
+            throw new Error("Missing required fields");
         }
 
         if (method.type !== "online") {
@@ -171,6 +201,193 @@ export class PaymentTransactionService {
             currency: order.currency,
             key: keyId,
             transactionId: transaction._id,
+        };
+    }
+
+    async createBookingTransaction(data: any) {
+        const { paymentMethod, providerConnection, userId, bookingId, currency } = data;
+
+        if (!paymentMethod || !userId || !bookingId) {
+            throw new Error("Missing required fields");
+        }
+
+        // Amount is derived from the booking (server-authoritative — not client-sent).
+        const booking = await this.repo.findBookingById(bookingId);
+        if (!booking) throw new Error("Booking not found");
+        if (booking.paymentStatus === "paid") {
+            throw new Error("Booking already paid");
+        }
+
+        const feeRupees = booking.estimate?.shopperFee;
+        if (!feeRupees || feeRupees <= 0) {
+            throw new Error("Invalid booking fee");
+        }
+        const amountInPaise = Math.round(feeRupees * 100);
+
+        const method = await PaymentMethodModel.findById(paymentMethod);
+        if (!method || method.isDeleted || !method.isActive) {
+            throw new Error("Invalid payment method");
+        }
+
+        // ----- DEV-ONLY demo payment: no gateway; confirmed at /verifybooking -----
+        if ((method as any).isDemo) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const stamp = Date.now();
+            const txn = await this.repo.create({
+                paymentMethod,
+                amount: amountInPaise / 100,
+                currency: currency || "INR",
+                externalOrderId: `DEMO-${stamp}`,
+                status: "pending",
+                metadata: { userId, bookingId, type: "personal_shopper", demo: true },
+            });
+
+            // Same shape as a real createbooking so the app's flow is unchanged;
+            // it then calls /verifybooking (with placeholder values) to confirm.
+            return {
+                orderId: `DEMO-${stamp}`,
+                amount: amountInPaise,
+                currency: currency || "INR",
+                key: "demo",
+                transactionId: txn._id,
+                demo: true,
+            };
+        }
+
+        if (!providerConnection) {
+            throw new Error("Missing required fields");
+        }
+        if (method.type !== "online") {
+            throw new Error("Only online payments allowed");
+        }
+
+        const provider = await ProviderConnectionModel.findById(providerConnection);
+        if (!provider || provider.isDeleted || !provider.isActive) {
+            throw new Error("Invalid provider connection");
+        }
+        if (provider.provider !== "razorpay") {
+            throw new Error("Unsupported provider");
+        }
+
+        const keyIdEncrypted = provider.credentials.get("keyId");
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keyIdEncrypted || !keySecretEncrypted) {
+            throw new Error("Payment provider credentials not configured properly");
+        }
+
+        const keyId = provider.decryptValue(keyIdEncrypted);
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+
+        const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+
+        const order = await razorpay.orders.create({
+            amount: amountInPaise,
+            currency: currency || "INR",
+            receipt: `psb_${Date.now()}`,
+        });
+
+        const transaction = await this.repo.create({
+            paymentMethod,
+            providerConnection,
+            amount: amountInPaise / 100,
+            currency: currency || "INR",
+            externalOrderId: order.id,
+            status: "pending",
+            metadata: {
+                userId,
+                bookingId,
+                type: "personal_shopper",
+            },
+        });
+
+        return {
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            key: keyId,
+            transactionId: transaction._id,
+        };
+    }
+
+    async verifyBookingPayment(data: any) {
+        const {
+            transactionId,
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+        } = data;
+
+        if (!transactionId || !razorpay_payment_id || !razorpay_signature) {
+            throw new Error("Missing payment verification fields");
+        }
+
+        const transaction = await this.repo.findById(transactionId);
+        if (!transaction) throw new Error("Transaction not found");
+        if (transaction.status === "success") {
+            throw new Error("Transaction already completed");
+        }
+
+        // ----- DEV-ONLY demo: confirm without signature check -----
+        // Only a transaction that was itself created as a demo can be confirmed
+        // this way, so real transactions can't be confirmed with placeholder values.
+        if ((transaction.metadata as any)?.demo === true) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const { bookingId: demoBookingId } = transaction.metadata || {};
+            if (!demoBookingId) throw new Error("Missing transaction metadata");
+            const demoBooking = await this.repo.findBookingById(demoBookingId);
+            if (!demoBooking) throw new Error("Booking not found");
+
+            await this.repo.markSuccess(transactionId, razorpay_payment_id || `DEMO-PAY-${Date.now()}`);
+            await this.repo.markBookingPaid(demoBookingId, transactionId);
+
+            return {
+                success: true,
+                message: "Payment verified & booking confirmed",
+                bookingId: demoBooking._id,
+            };
+        }
+
+        if (transaction.externalOrderId !== razorpay_order_id) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Order ID mismatch");
+        }
+
+        const provider = await ProviderConnectionModel.findById(transaction.providerConnection);
+        if (!provider) throw new Error("Provider not found");
+
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keySecretEncrypted) throw new Error("Key secret missing");
+
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+
+        const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+        const expectedSignature = crypto
+            .createHmac("sha256", keySecret)
+            .update(body)
+            .digest("hex");
+
+        if (expectedSignature !== razorpay_signature) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Invalid payment signature");
+        }
+
+        const { bookingId } = transaction.metadata || {};
+        if (!bookingId) throw new Error("Missing transaction metadata");
+
+        const booking = await this.repo.findBookingById(bookingId);
+        if (!booking) throw new Error("Booking not found");
+
+        await this.repo.markSuccess(transactionId, razorpay_payment_id);
+        await this.repo.markBookingPaid(bookingId, transactionId);
+
+        return {
+            success: true,
+            message: "Payment verified & booking confirmed",
+            bookingId: booking._id,
         };
     }
 
@@ -271,12 +488,7 @@ export class PaymentTransactionService {
             razorpay_signature,
         } = data;
 
-        if (
-            !transactionId ||
-            !razorpay_order_id ||
-            !razorpay_payment_id ||
-            !razorpay_signature
-        ) {
+        if (!transactionId || !razorpay_payment_id || !razorpay_signature) {
             throw new Error("Missing payment verification fields");
         }
 
@@ -286,6 +498,28 @@ export class PaymentTransactionService {
             throw new Error("Transaction not found");
         }
 
+        // ----- DEV-ONLY demo: confirm without signature check -----
+        if ((transaction.metadata as any)?.demo === true) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const { orderId: demoOrderId } = transaction.metadata || {};
+            if (!demoOrderId) throw new Error("Missing transaction metadata");
+            const demoOrder = await this.repo.findOrderById(demoOrderId);
+            if (!demoOrder) throw new Error("Order not found");
+            if (demoOrder.status !== "pending") {
+                throw new Error("Order already processed");
+            }
+            await this.repo.markSuccess(transactionId, razorpay_payment_id || `DEMO-PAY-${Date.now()}`);
+            await this.repo.markOrderPaid(demoOrderId, transactionId);
+            return {
+                success: true,
+                message: "Payment verified & order confirmed",
+                orderId: demoOrder._id,
+            };
+        }
+
+        // ✅ Match orderId
         if (transaction.externalOrderId !== razorpay_order_id) {
             await this.repo.markFailed(transactionId);
             throw new Error("Order ID mismatch");

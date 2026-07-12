@@ -34,7 +34,10 @@ export class PaymentMethodService {
     }
 
     async getAll() {
-        return await this.repo.findAll();
+        const items = await this.repo.findAll();
+        // Demo method is only listed when demo payments are enabled (dev).
+        if (process.env.ALLOW_DEMO_PAYMENT === "true") return items;
+        return items.filter((m: any) => !m.isDemo);
     }
 
     async getById(id: string) {
