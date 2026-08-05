@@ -35,6 +35,7 @@ import driverProfileRoutes from "../modules/driverprofile/routes/driverprofile.r
 import firebaseTokenRoutes from "../modules/notification/routes/firebasetoken.routes.js";
 import vendorAccountStatementRoutes from "../modules/vendoraccountstatements/routes/vendoraccountsroutes.js";
 import personalShopperRoutes from "../modules/personalshopper/routes/personalshopper.routes.js";
+import buyForMeRoutes from "../modules/buyforme/routes/buyforme.routes.js";
 
 userAuthRoutes
 
@@ -120,6 +121,8 @@ router.use("/firebasetokens", firebaseTokenRoutes);
 router.use("/vendoraccountstatements", vendorAccountStatementRoutes);
 
 router.use("/personalshopper", personalShopperRoutes);
+
+router.use("/buyforme", buyForMeRoutes);
 
 
 

@@ -71,6 +71,25 @@ export class PaymentTransactionController {
         }
     };
 
+    createBuyForMeTransaction = async (req: Request, res: Response) => {
+        try {
+            const body = { ...req.body, userId: req.user?.id ?? req.body.userId };
+            const result = await this.service.createBuyForMeTransaction(body);
+            return res.status(201).json(ResponseUtil.created("Transaction created", result));
+        } catch (error: any) {
+            return res.status(400).json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    verifyBuyForMe = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.verifyBuyForMePayment(req.body);
+            return res.status(200).json(ResponseUtil.success("Buy For Me payment verified", result));
+        } catch (error: any) {
+            return res.status(400).json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (_: Request, res: Response) => {
         try {
             const result = await this.service.getAll();

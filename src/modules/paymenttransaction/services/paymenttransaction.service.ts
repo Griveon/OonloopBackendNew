@@ -311,6 +311,140 @@ export class PaymentTransactionService {
         };
     }
 
+    async createBuyForMeTransaction(data: any) {
+        const { paymentMethod, providerConnection, userId, requestId, currency } = data;
+        if (!paymentMethod || !userId || !requestId) {
+            throw new Error("Missing required fields");
+        }
+
+        const request = await this.repo.findBuyForMeById(requestId);
+        if (!request) throw new Error("Request not found");
+        if (request.paymentStatus === "paid") throw new Error("Request already paid");
+
+        const totalRupees = request.totalPayable;
+        if (!totalRupees || totalRupees <= 0) throw new Error("Invalid payable amount");
+        const amountInPaise = Math.round(totalRupees * 100);
+
+        const method = await PaymentMethodModel.findById(paymentMethod);
+        if (!method || method.isDeleted || !method.isActive) {
+            throw new Error("Invalid payment method");
+        }
+
+        // DEV-ONLY demo payment
+        if ((method as any).isDemo) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const stamp = Date.now();
+            const txn = await this.repo.create({
+                paymentMethod,
+                amount: amountInPaise / 100,
+                currency: currency || "INR",
+                externalOrderId: `DEMO-${stamp}`,
+                status: "pending",
+                metadata: { userId, requestId, type: "buyforme", demo: true },
+            });
+            return {
+                orderId: `DEMO-${stamp}`,
+                amount: amountInPaise,
+                currency: currency || "INR",
+                key: "demo",
+                transactionId: txn._id,
+                demo: true,
+            };
+        }
+
+        if (!providerConnection) throw new Error("Missing required fields");
+        if (method.type !== "online") throw new Error("Only online payments allowed");
+
+        const provider = await ProviderConnectionModel.findById(providerConnection);
+        if (!provider || provider.isDeleted || !provider.isActive) {
+            throw new Error("Invalid provider connection");
+        }
+        if (provider.provider !== "razorpay") throw new Error("Unsupported provider");
+
+        const keyIdEncrypted = provider.credentials.get("keyId");
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keyIdEncrypted || !keySecretEncrypted) {
+            throw new Error("Payment provider credentials not configured properly");
+        }
+        const keyId = provider.decryptValue(keyIdEncrypted);
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+        const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+
+        const order = await razorpay.orders.create({
+            amount: amountInPaise,
+            currency: currency || "INR",
+            receipt: `bfm_${Date.now()}`,
+        });
+        const transaction = await this.repo.create({
+            paymentMethod,
+            providerConnection,
+            amount: amountInPaise / 100,
+            currency: currency || "INR",
+            externalOrderId: order.id,
+            status: "pending",
+            metadata: { userId, requestId, type: "buyforme" },
+        });
+        return {
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            key: keyId,
+            transactionId: transaction._id,
+        };
+    }
+
+    async verifyBuyForMePayment(data: any) {
+        const { transactionId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = data;
+        if (!transactionId || !razorpay_payment_id || !razorpay_signature) {
+            throw new Error("Missing payment verification fields");
+        }
+
+        const transaction = await this.repo.findById(transactionId);
+        if (!transaction) throw new Error("Transaction not found");
+        if (transaction.status === "success") throw new Error("Transaction already completed");
+
+        const finish = async (requestId: string) => {
+            const request = await this.repo.findBuyForMeById(requestId);
+            if (!request) throw new Error("Request not found");
+            await this.repo.markSuccess(transactionId, razorpay_payment_id || `DEMO-PAY-${Date.now()}`);
+            await this.repo.markBuyForMePaid(requestId, transactionId);
+            // open the request to shoppers
+            const { BuyForMeService } = await import("../../buyforme/services/buyforme.service.js");
+            await new BuyForMeService().onPaid(requestId);
+            return { success: true, message: "Payment verified & request confirmed", requestId: request._id };
+        };
+
+        // demo transaction
+        if ((transaction.metadata as any)?.demo === true) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") throw new Error("Demo payment is not enabled");
+            const { requestId } = transaction.metadata || {};
+            if (!requestId) throw new Error("Missing transaction metadata");
+            return finish(requestId);
+        }
+
+        // real signature verification
+        if (transaction.externalOrderId !== razorpay_order_id) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Order ID mismatch");
+        }
+        const provider = await ProviderConnectionModel.findById(transaction.providerConnection);
+        if (!provider) throw new Error("Provider not found");
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keySecretEncrypted) throw new Error("Key secret missing");
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+        const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+        const expected = crypto.createHmac("sha256", keySecret).update(body).digest("hex");
+        if (expected !== razorpay_signature) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Invalid payment signature");
+        }
+        const { requestId } = transaction.metadata || {};
+        if (!requestId) throw new Error("Missing transaction metadata");
+        return finish(requestId);
+    }
+
     async verifyBookingPayment(data: any) {
         const {
             transactionId,
