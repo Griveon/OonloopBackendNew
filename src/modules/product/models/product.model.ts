@@ -12,6 +12,34 @@ const imageSchema = new Schema<IProductImage>(
     { _id: false }
 );
 
+const availabilitySchema = new Schema(
+    {
+        type: {
+            type: String,
+            enum: ["always", "scheduled"],
+            default: "always",
+            index: true,
+        },
+        fromTime: {
+            type: String,
+            default: "",
+        },
+        toTime: {
+            type: String,
+            default: "",
+        },
+        fromMinutes: {
+            type: Number,
+            default: null,
+        },
+        toMinutes: {
+            type: Number,
+            default: null,
+        },
+    },
+    { _id: false }
+);
+
 const variantSchema = new Schema<IProductVariant>(
     {
         attributes: { type: Map, of: Schema.Types.Mixed },
@@ -81,6 +109,16 @@ const productSchema = new Schema<IProduct>(
         minQty: { type: Number, default: 1 },
         slug: { type: String, required: true, unique: true },
         gst: gstSchema,
+        availability: {
+            type: availabilitySchema,
+            default: () => ({
+                type: "always",
+                fromTime: "",
+                toTime: "",
+                fromMinutes: null,
+                toMinutes: null,
+            }),
+        },
         isMainCatalogProduct: {
             type: Boolean,
             default: true,

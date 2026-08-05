@@ -65,7 +65,6 @@ productRoutes.get(
 productRoutes.post(
     "/create",
     authMiddleware,
-    validateUsingZOD(createProductSchema),
     controller.create
 );
 

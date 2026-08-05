@@ -24,7 +24,7 @@ export class NearbyUserVendorsRepository {
             // isVerified: true,
         };
 
-        const countQuery = {
+        const countQuery:any = {
             "storeLocationAddress.location": {
                 $geoWithin: {
                     $centerSphere: [

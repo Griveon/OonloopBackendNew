@@ -1,0 +1,75 @@
+import type {
+    NextFunction,
+    Request,
+    Response,
+} from "express";
+
+import {
+    verifyAccessToken,
+    type AccessTokenPayload,
+} from "../utils/auth-token.util.js";
+
+export interface AuthenticatedRequest
+    extends Request {
+    authUser?: AccessTokenPayload;
+}
+
+export const authenticateAccessToken = (
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const authorization =
+            req.headers.authorization;
+
+        if (
+            !authorization ||
+            !authorization.startsWith(
+                "Bearer "
+            )
+        ) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Authorization token is required",
+            });
+        }
+
+        const accessToken =
+            authorization
+                .slice(7)
+                .trim();
+
+        if (!accessToken) {
+            return res.status(401).json({
+                success: false,
+                message:
+                    "Authorization token is required",
+            });
+        }
+
+        req.authUser =
+            verifyAccessToken(
+                accessToken
+            );
+
+        return next();
+    } catch (error: any) {
+        const isExpired =
+            error?.name ===
+            "TokenExpiredError";
+
+        return res.status(401).json({
+            success: false,
+
+            message: isExpired
+                ? "Access token expired"
+                : "Invalid access token",
+
+            code: isExpired
+                ? "ACCESS_TOKEN_EXPIRED"
+                : "INVALID_ACCESS_TOKEN",
+        });
+    }
+};

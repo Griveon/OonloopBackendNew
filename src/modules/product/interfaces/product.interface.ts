@@ -74,4 +74,15 @@ export interface IProduct {
     minQty?: number;
     slug: string;
     gst?: IGSTDetails;
+    availability: any;
+}
+
+export type ProductAvailabilityType = "always" | "scheduled";
+
+export interface IProductAvailability {
+    type: ProductAvailabilityType;
+    fromTime?: string;      // HH:mm
+    toTime?: string;        // HH:mm
+    fromMinutes?: number;   // calculated backend
+    toMinutes?: number;     // calculated backend
 }

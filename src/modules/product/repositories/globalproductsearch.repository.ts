@@ -10,32 +10,103 @@ export class ProductSearchRepository {
 
         const skip = (page - 1) * limit;
 
+        const now = new Date();
+
+        const indiaTime = new Date(
+            now.toLocaleString("en-US", {
+                timeZone: "Asia/Kolkata",
+            })
+        );
+
+        const currentMinutes =
+            indiaTime.getHours() * 60 + indiaTime.getMinutes();
+
         const query = {
             isActive: true,
-            $text: {
-                $search: keyword,
-            },
+            $and: [
+                {
+                    $or: [
+                        { name: { $regex: keyword, $options: "i" } },
+                        { description: { $regex: keyword, $options: "i" } },
+                        { slug: { $regex: keyword, $options: "i" } },
+                    ],
+                },
+                {
+                    $or: [
+                        {
+                            "availability.type": "always",
+                        },
+                        {
+                            $and: [
+                                { "availability.type": "scheduled" },
+                                {
+                                    $expr: {
+                                        $cond: [
+                                            {
+                                                $lte: [
+                                                    "$availability.fromMinutes",
+                                                    "$availability.toMinutes",
+                                                ],
+                                            },
+                                            {
+                                                $and: [
+                                                    {
+                                                        $lte: [
+                                                            "$availability.fromMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                    {
+                                                        $gte: [
+                                                            "$availability.toMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                            {
+                                                $or: [
+                                                    {
+                                                        $lte: [
+                                                            "$availability.fromMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                    {
+                                                        $gte: [
+                                                            "$availability.toMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                }
+            ],
         };
 
         const [products, total] = await Promise.all([
-            ProductModel.find(
-                query,
-                {
-                    score: { $meta: "textScore" },
-                }
-            )
-                .sort({
-                    score: { $meta: "textScore" },
-                })
+            ProductModel.find(query)
                 .skip(skip)
                 .limit(limit)
                 .populate("productCategory")
                 .populate("category")
                 .populate("unit")
+                .populate({
+                    path: "variants.unit",
+                    select: "name shortName symbol unitValue",
+                })
                 .lean(),
 
             ProductModel.countDocuments(query),
         ]);
+
+        console.log(query);
 
         return {
             products,

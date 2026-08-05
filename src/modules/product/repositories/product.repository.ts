@@ -9,7 +9,9 @@ export class ProductRepository {
     }
 
     async findById(id: string) {
-        return await ProductModel.findById(id);
+        return await ProductModel.findById(id)
+            .populate("variants.unit")
+            .populate("unit");
     }
 
     async findByCouponId(id: string) {
@@ -184,6 +186,7 @@ export class ProductRepository {
         return ProductModel.find({
             isActive: true,
             vendorId: { $in: vendorIds },
+            ...this.getAvailableProductFilter(),
         })
             .sort({ createdAt: -1 })
             .limit(limit)
@@ -204,6 +207,7 @@ export class ProductRepository {
         const filter = {
             vendorId,
             isActive: true,
+            ...this.getAvailableProductFilter(),
         };
 
         const [items, total] = await Promise.all([
@@ -223,6 +227,82 @@ export class ProductRepository {
             total,
             page,
             limit,
+        };
+    }
+
+    private getCurrentMinutes() {
+        const now = new Date();
+
+        // India timezone
+        const indiaTime = new Date(
+            now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+        );
+
+        return indiaTime.getHours() * 60 + indiaTime.getMinutes();
+    }
+
+    private getAvailableProductFilter() {
+        const currentMinutes = this.getCurrentMinutes();
+
+        return {
+            $or: [
+                {
+                    "availability.type": "always",
+                },
+
+                {
+                    $and: [
+                        { "availability.type": "scheduled" },
+                        {
+                            $expr: {
+                                $lte: [
+                                    "$availability.fromMinutes",
+                                    "$availability.toMinutes",
+                                ],
+                            },
+                        },
+                        {
+                            "availability.fromMinutes": {
+                                $lte: currentMinutes,
+                            },
+                        },
+                        {
+                            "availability.toMinutes": {
+                                $gte: currentMinutes,
+                            },
+                        },
+                    ],
+                },
+
+                // Overnight schedule example: 22:00 to 02:00
+                {
+                    $and: [
+                        { "availability.type": "scheduled" },
+                        {
+                            $expr: {
+                                $gt: [
+                                    "$availability.fromMinutes",
+                                    "$availability.toMinutes",
+                                ],
+                            },
+                        },
+                        {
+                            $or: [
+                                {
+                                    "availability.fromMinutes": {
+                                        $lte: currentMinutes,
+                                    },
+                                },
+                                {
+                                    "availability.toMinutes": {
+                                        $gte: currentMinutes,
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
         };
     }
 }

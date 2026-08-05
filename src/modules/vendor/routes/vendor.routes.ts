@@ -56,5 +56,10 @@ vendorRoutes.get(
     categoryProductsController.getSubCategories
 );
 
+vendorRoutes.get(
+    "/restaurants",
+    categoryProductsController.getRestaurants
+);
+
 
 export default vendorRoutes;

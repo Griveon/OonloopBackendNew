@@ -24,7 +24,7 @@ export class PaymentMethodRepository {
         return await PaymentMethodModel.findOne({
             type,
             isDeleted: false,
-        });
+        } as any);
     }
 
     async update(id: string, data: Partial<IPaymentMethod>) {

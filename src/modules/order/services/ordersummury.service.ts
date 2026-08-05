@@ -6,9 +6,13 @@ const round = (num: number) => Math.round(num * 100) / 100;
 // Prefer an applied coupon with the highest discount; if none qualify yet,
 // keep the one closest to qualifying (smallest amountNeeded).
 function chooseBetter(a: any, b: any) {
-    if (a.applied && b.applied) return b.discount > a.discount ? b : a;
+    if (a.applied && b.applied) {
+        return b.discount > a.discount ? b : a;
+    }
+
     if (a.applied) return a;
     if (b.applied) return b;
+
     return b.amountNeeded < a.amountNeeded ? b : a;
 }
 
@@ -27,33 +31,48 @@ export class OrderSummuryService {
             couponCode?: string;
         }[]
     ) {
-        if (!items.length) throw new Error("Items are required");
+        if (!items.length) {
+            throw new Error("Items are required");
+        }
 
         const productIds = items.map((i) => i.productId);
+
         const products = await this.repo.getProductsByIds(productIds);
 
-        if (!products.length) throw new Error("Products not found");
+        if (!products.length) {
+            throw new Error("Products not found");
+        }
 
         const productMap = new Map(
-            products.map((p) => [p._id.toString(), p])
+            products.map((product) => [
+                product._id.toString(),
+                product,
+            ])
         );
 
         let subtotal = 0;
+
         const summaryItems: any[] = [];
 
         // ---------------------------------------------------------------
-        // 1. Build priced line items (GST removed — price already includes it)
+        // 1. Build priced line items
+        // GST removed from products because product price already includes GST.
         // ---------------------------------------------------------------
         for (const item of items) {
             const qty = Number(item.qty);
 
             if (isNaN(qty) || qty <= 0) {
-                throw new Error(`Invalid quantity for product ${item.productId}`);
+                throw new Error(
+                    `Invalid quantity for product ${item.productId}`
+                );
             }
 
             const product: any = productMap.get(item.productId);
+
             if (!product) {
-                throw new Error(`Product not found: ${item.productId}`);
+                throw new Error(
+                    `Product not found: ${item.productId}`
+                );
             }
 
             let price = 0;
@@ -61,26 +80,36 @@ export class OrderSummuryService {
 
             if (item.variantId) {
                 variant = product.variants?.find(
-                    (v: any) => v._id.toString() === item.variantId
+                    (v: any) =>
+                        v._id.toString() === item.variantId
                 );
+
                 if (!variant) {
-                    throw new Error(`Variant not found: ${item.variantId}`);
+                    throw new Error(
+                        `Variant not found: ${item.variantId}`
+                    );
                 }
+
                 price = variant.price ?? product.mrp ?? 0;
             } else {
                 price = product.mrp ?? 0;
             }
 
             const itemTotal = price * qty;
+
             subtotal += itemTotal;
 
             const productImage =
-                product.images?.find((img: any) => img.isPrimary)?.url ||
+                product.images?.find(
+                    (img: any) => img.isPrimary
+                )?.url ||
                 product.images?.[0]?.url ||
                 "";
 
             const variantImage =
-                variant?.images?.find((img: any) => img.isPrimary)?.url ||
+                variant?.images?.find(
+                    (img: any) => img.isPrimary
+                )?.url ||
                 variant?.images?.[0]?.url;
 
             summaryItems.push({
@@ -88,7 +117,13 @@ export class OrderSummuryService {
                 vendorId: product.vendorId,
                 name: product.name,
                 slug: product.slug,
-                images: [{ url: variantImage || productImage }],
+
+                images: [
+                    {
+                        url: variantImage || productImage,
+                    },
+                ],
+
                 variant: variant
                     ? {
                         _id: variant._id,
@@ -98,43 +133,60 @@ export class OrderSummuryService {
                         attributes: variant.attributes,
                     }
                     : null,
+
                 mrp: product.mrp,
                 price,
                 qty,
-                // the coupon this product was selected under (the global context)
+
                 couponCode: item.couponCode
-                    ? String(item.couponCode).toUpperCase().trim()
+                    ? String(item.couponCode)
+                        .toUpperCase()
+                        .trim()
                     : null,
+
                 total: round(itemTotal),
             });
         }
 
         // ---------------------------------------------------------------
-        // 2. Resolve coupons — only against products of the coupon's seller
+        // 2. Resolve coupons only against products of the coupon's seller
         // ---------------------------------------------------------------
-        // Group coupon-tagged items by (couponCode, vendorId).
         const groups = new Map<string, any[]>();
-        for (const si of summaryItems) {
-            if (!si.couponCode) continue;
-            const key = `${si.couponCode}::${si.vendorId.toString()}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key)!.push(si);
+
+        for (const summaryItem of summaryItems) {
+            if (!summaryItem.couponCode) continue;
+
+            const key = `${summaryItem.couponCode}::${summaryItem.vendorId.toString()}`;
+
+            if (!groups.has(key)) {
+                groups.set(key, []);
+            }
+
+            groups.get(key)!.push(summaryItem);
         }
 
         const candidates: any[] = [];
+
         for (const [, groupItems] of groups) {
             const vendorId = groupItems[0].vendorId;
             const code = groupItems[0].couponCode;
 
-            const coupon: any = await this.repo.getActiveCoupon(code, vendorId);
-            // Coupon not found / inactive / not this seller's -> ignored entirely.
+            const coupon: any =
+                await this.repo.getActiveCoupon(
+                    code,
+                    vendorId
+                );
+
+            // Coupon not found, inactive or not owned by this seller.
             if (!coupon) continue;
 
             const eligibleSubtotal = groupItems.reduce(
-                (s, i) => s + i.total,
+                (sum, item) => sum + item.total,
                 0
             );
-            const minOrderValue = coupon.minOrderValue ?? 0;
+
+            const minOrderValue =
+                coupon.minOrderValue ?? 0;
 
             let applied = false;
             let discount = 0;
@@ -142,13 +194,23 @@ export class OrderSummuryService {
 
             if (eligibleSubtotal >= minOrderValue) {
                 applied = true;
-                if (coupon.discountType === "PERCENTAGE") {
-                    discount = (eligibleSubtotal * coupon.discountValue) / 100;
+
+                if (
+                    coupon.discountType === "PERCENTAGE"
+                ) {
+                    discount =
+                        (eligibleSubtotal *
+                            coupon.discountValue) /
+                        100;
                 } else {
-                    discount = Math.min(coupon.discountValue, eligibleSubtotal);
+                    discount = Math.min(
+                        coupon.discountValue,
+                        eligibleSubtotal
+                    );
                 }
             } else {
-                amountNeeded = minOrderValue - eligibleSubtotal;
+                amountNeeded =
+                    minOrderValue - eligibleSubtotal;
             }
 
             candidates.push({
@@ -157,7 +219,11 @@ export class OrderSummuryService {
                 discountType: coupon.discountType,
                 discountValue: coupon.discountValue,
                 minOrderValue,
-                eligibleSubtotal: round(eligibleSubtotal),
+
+                eligibleSubtotal: round(
+                    eligibleSubtotal
+                ),
+
                 applied,
                 discount: round(discount),
                 amountNeeded: round(amountNeeded),
@@ -168,61 +234,109 @@ export class OrderSummuryService {
         // 3. Enforce ONE coupon per seller
         // ---------------------------------------------------------------
         const perVendor = new Map<string, any>();
-        for (const c of candidates) {
-            const key = c.vendorId.toString();
+
+        for (const candidate of candidates) {
+            const key = candidate.vendorId.toString();
+
             const existing = perVendor.get(key);
-            perVendor.set(key, existing ? chooseBetter(existing, c) : c);
+
+            perVendor.set(
+                key,
+                existing
+                    ? chooseBetter(existing, candidate)
+                    : candidate
+            );
         }
+
         const coupons = [...perVendor.values()];
 
-        // Attach the seller's store name to each coupon so the UI can render it
-        // (coupon.vendorId is a User id, which the cart's vendor._id is not).
+        // ---------------------------------------------------------------
+        // Attach vendor/store name to coupons
+        // ---------------------------------------------------------------
         if (coupons.length) {
-            const profiles = await this.repo.getVendorStoreNames(
-                coupons.map((c) => c.vendorId)
-            );
+            const profiles =
+                await this.repo.getVendorStoreNames(
+                    coupons.map(
+                        (coupon) => coupon.vendorId
+                    )
+                );
+
             const nameMap = new Map(
-                profiles.map((p: any) => [p.user.toString(), p.storeName])
+                profiles.map((profile: any) => [
+                    profile.user.toString(),
+                    profile.storeName,
+                ])
             );
-            for (const c of coupons) {
-                c.vendorName = nameMap.get(c.vendorId.toString()) ?? null;
+
+            for (const coupon of coupons) {
+                coupon.vendorName =
+                    nameMap.get(
+                        coupon.vendorId.toString()
+                    ) ?? null;
             }
         }
 
         // ---------------------------------------------------------------
-        // 4. Totals — service fee only, no GST, no delivery
-        // ---------------------------------------------------------------
-        // ---------------------------------------------------------------
-        // 4. Totals — delivery fee + platform fee + GST on both
+        // 4. Calculate discount
         // ---------------------------------------------------------------
         const totalDiscount = round(
             coupons
-                .filter((c) => c.applied)
-                .reduce((s, c) => s + c.discount, 0)
+                .filter((coupon) => coupon.applied)
+                .reduce(
+                    (sum, coupon) =>
+                        sum + coupon.discount,
+                    0
+                )
         );
 
+        // ---------------------------------------------------------------
+        // 5. Charges
+        // Delivery charge is returned for UI display ONLY.
+        // It is NOT added to the summary total.
+        // ---------------------------------------------------------------
         const deliveryFee = 49;
         const platformFee = 7;
 
         const gstRate = 18;
-        const feeGst = round(((deliveryFee + platformFee) * gstRate) / 100);
 
-        const totalAmount = round(
-            subtotal - totalDiscount + deliveryFee + platformFee + feeGst
+        // GST is calculated only on platform fee.
+        // Delivery fee is excluded from payable summary.
+        const feeGst = round(
+            (platformFee * gstRate) / 100
         );
 
-        const vendorId = summaryItems[0]?.vendorId || null;
+        // ---------------------------------------------------------------
+        // 6. Final payable amount
+        // Delivery fee intentionally NOT included.
+        // ---------------------------------------------------------------
+        const totalAmount = round(
+            subtotal -
+            totalDiscount +
+            platformFee +
+            feeGst
+        );
+
+        const vendorId =
+            summaryItems[0]?.vendorId || null;
 
         return {
             vendorId,
+
             items: summaryItems,
+
             coupons,
+
             subtotal: round(subtotal),
+
             totalDiscount,
 
+            // Returned for UI/display purpose only.
             deliveryFee: round(deliveryFee),
+
             platformFee: round(platformFee),
+
             gstRate,
+
             feeGst,
 
             totalAmount,

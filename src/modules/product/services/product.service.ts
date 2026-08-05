@@ -33,8 +33,6 @@ export class ProductService {
     async create(data: any) {
         const slug = await this.generateUniqueSlug(data.name);
 
-        console.log(data);
-
         // =========================================================
         // 1️⃣ CLEAN IMAGES (ONLY CDN URLs)
         // =========================================================
@@ -52,7 +50,7 @@ export class ProductService {
                     position: img.position || 0,
                 }))
             : [];
-        console.log("Safe Images:", safeImages);
+
         // =========================================================
         // 2️⃣ CLEAN VIDEOS (ONLY CDN URLs)
         // =========================================================
@@ -72,12 +70,13 @@ export class ProductService {
             : [];
 
         // =========================================================
-        // 3️⃣ CLEAN VARIANTS (NO RAW IMAGES)
+        // 3️⃣ CLEAN VARIANTS
         // =========================================================
         const safeVariants = Array.isArray(data.variants)
             ? data.variants.map((v: any) => ({
                 ...(v._id ? { _id: v._id } : {}),
 
+                variantId: v.variantId,
                 attributes: v.attributes || {},
 
                 unit: v.unit,
@@ -87,22 +86,28 @@ export class ProductService {
                 price: Number(v.price || 0),
                 mrp: Number(v.mrp || 0),
 
-                // ❌ IMPORTANT: DO NOT store raw images here
-                // images are handled by upload API only
+                // Images handled by upload API
                 images: [],
             }))
             : [];
 
         // =========================================================
-        // 4️⃣ BUILD FINAL PRODUCT
+        // 4️⃣ NORMALIZE AVAILABILITY
         // =========================================================
+        const availability = this.normalizeAvailability(data);
 
+        console.log("✅ Normalized Availability:", availability);
+
+        // =========================================================
+        // 5️⃣ BUILD FINAL PRODUCT
+        // =========================================================
         const productPayload = {
             ...data,
 
             slug,
 
-            // IMPORTANT FLAGS
+            availability,
+
             isMainCatalogProduct: data.isMainCatalogProduct ?? true,
 
             images: safeImages,
@@ -110,9 +115,8 @@ export class ProductService {
             variants: safeVariants,
         };
 
-        // =========================================================
-        // 5️⃣ CREATE PRODUCT
-        // =========================================================
+        console.log("📦 Final Product Payload Availability:", productPayload.availability);
+
         return await this.repo.create(productPayload);
     }
 
@@ -178,6 +182,10 @@ export class ProductService {
         if (!existing) throw new Error("Product not found");
 
         const updatePayload: any = { ...data };
+
+        if (data.availability) {
+            updatePayload.availability = this.normalizeAvailability(data);
+        }
 
         // Remove array fields — handled separately below
         delete updatePayload.images;
@@ -365,6 +373,56 @@ export class ProductService {
             total: result.total,
             page: result.page,
             limit: result.limit,
+        };
+    }
+
+    private isValidTime(time: string): boolean {
+        return /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
+    }
+
+    private timeToMinutes(time: string): number {
+        let [hours, minutes]: any = time.split(":").map(Number);
+        return hours * 60 + minutes;
+    }
+
+    private normalizeAvailability(data: any) {
+        const availability = data?.availability || {};
+        console.log("availability");
+        console.log(availability);
+
+        const type = availability.type || "always";
+
+        if (type === "always") {
+            return {
+                type: "always",
+                fromTime: "",
+                toTime: "",
+                fromMinutes: null,
+                toMinutes: null,
+            };
+        }
+
+        if (type !== "scheduled") {
+            throw new Error("Invalid availability type");
+        }
+
+        const fromTime = availability.fromTime;
+        const toTime = availability.toTime;
+
+        if (!fromTime || !toTime) {
+            throw new Error("Availability fromTime and toTime are required");
+        }
+
+        if (!this.isValidTime(fromTime) || !this.isValidTime(toTime)) {
+            throw new Error("Availability time must be in HH:mm format");
+        }
+
+        return {
+            type: "scheduled",
+            fromTime,
+            toTime,
+            fromMinutes: this.timeToMinutes(fromTime),
+            toMinutes: this.timeToMinutes(toTime),
         };
     }
 }

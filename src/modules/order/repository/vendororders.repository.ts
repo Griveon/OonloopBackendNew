@@ -14,6 +14,7 @@ export class VendorOrderRepository {
         const query: any = {
             vendor: vendorId,
             isActive: true,
+            paymentStatus: "success",
         };
 
         if (filter.status) {
@@ -82,11 +83,12 @@ export class VendorOrderRepository {
 
     async findVendorOrderById(
         orderId: string,
-        vendorId: string
+        vendorId: string,
     ) {
         const query: any = {
             vendor: vendorId,
-            isActive: true,
+            // isActive: true,
+            paymentStatus: "success",
         };
 
         if (mongoose.Types.ObjectId.isValid(orderId)) {
@@ -268,5 +270,5 @@ export class VendorOrderRepository {
             }
         );
     }
-    
+
 }

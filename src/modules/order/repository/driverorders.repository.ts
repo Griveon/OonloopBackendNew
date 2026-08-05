@@ -110,7 +110,8 @@ export class DriverOrderRepository {
     private getAvailableBaseQuery(filter: any = {}) {
         console.log(filter)
         const query: any = {
-            isActive: true,
+            // isActive: true,
+            paymentStatus: "success",
 
             /**
              * Available for driver only when seller/order is not completed/cancelled

@@ -15,8 +15,8 @@ export class VendorCategoryService {
         return await this.repo.createBulk(data);
     }
 
-    async getAll() {
-        return await this.repo.findAll();
+    async getAll(role: any) {
+        return await this.repo.findAll(role);
     }
 
     async getById(id: string) {

@@ -138,4 +138,56 @@ export class CategoryProductsController {
             });
         }
     };
+
+    getRestaurants = async (req: Request, res: Response) => {
+        try {
+            const {
+                categoryId,
+                latitude,
+                longitude,
+                maxDistance = 10000,
+                search = "",
+            } = req.query;
+
+            if (!categoryId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "categoryId is required",
+                });
+            }
+
+            if (!latitude || !longitude) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Latitude and longitude are required",
+                });
+            }
+
+            if (!mongoose.Types.ObjectId.isValid(String(categoryId))) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid categoryId",
+                });
+            }
+
+            const data = await this.service.getRestaurants(
+                String(categoryId),
+                Number(latitude),
+                Number(longitude),
+                Number(maxDistance),
+                String(search)
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "Restaurants fetched successfully",
+                data,
+            });
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error?.message || "Failed to fetch restaurants",
+            });
+        }
+    };
 }

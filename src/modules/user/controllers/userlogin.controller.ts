@@ -13,6 +13,7 @@ export class UserLoginController {
     login = async (req: Request, res: Response) => {
         try {
             const { identifier, pin, role } = req.body;
+            console.log(identifier, pin, role)
 
             if (!identifier || !pin) {
                 return res.status(400).json(

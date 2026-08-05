@@ -227,4 +227,33 @@ export class VendorProfileController {
             );
         }
     };
+
+    async updateProfileImage(req: Request, res: Response) {
+        try {
+            const userId = (req as any).user.id;
+
+            if (!req.file) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Profile image is required",
+                });
+            }
+
+            const vendor = await this.vendorService.updateProfileImage(
+                userId,
+                req.file
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: "Profile image updated successfully",
+                data: vendor,
+            });
+        } catch (error: any) {
+            return res.status(500).json({
+                success: false,
+                message: error.message,
+            });
+        }
+    }
 }

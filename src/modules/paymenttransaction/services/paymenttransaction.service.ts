@@ -280,15 +280,10 @@ export class PaymentTransactionService {
             throw new Error("Missing payment verification fields");
         }
 
-        const transaction = await this.repo.findById(transactionId);
+        const transaction: any = await this.repo.findById(transactionId);
 
         if (!transaction) {
             throw new Error("Transaction not found");
-        }
-
-        if (transaction.externalOrderId !== razorpay_order_id) {
-            await this.repo.markFailed(transactionId);
-            throw new Error("Order ID mismatch");
         }
 
         const { orderId, userId } = transaction.metadata || {};
@@ -297,12 +292,13 @@ export class PaymentTransactionService {
             throw new Error("Missing transaction metadata");
         }
 
-        const order = await this.repo.findOrderById(orderId);
+        const order: any = await this.repo.findOrderById(orderId);
 
         if (!order) {
             throw new Error("Order not found");
         }
 
+        // Idempotent response: retries from the mobile app or webhook are safe.
         if (
             transaction.status === "success" ||
             order.paymentStatus === "success"
@@ -316,39 +312,129 @@ export class PaymentTransactionService {
             };
         }
 
-        const provider = await ProviderConnectionModel.findById(
+        if (transaction.externalOrderId !== razorpay_order_id) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Razorpay order ID mismatch");
+        }
+
+        const provider: any = await ProviderConnectionModel.findById(
             transaction.providerConnection
         );
 
-        if (!provider) {
-            throw new Error("Provider not found");
+        if (!provider || provider.isDeleted || !provider.isActive) {
+            throw new Error("Payment provider not available");
         }
 
+        const keyIdEncrypted = provider.credentials.get("keyId");
         const keySecretEncrypted = provider.credentials.get("keySecret");
 
-        if (!keySecretEncrypted) {
-            throw new Error("Key secret missing");
+        if (!keyIdEncrypted || !keySecretEncrypted) {
+            throw new Error("Razorpay credentials are missing");
         }
 
+        const keyId = provider.decryptValue(keyIdEncrypted);
         const keySecret = provider.decryptValue(keySecretEncrypted);
 
-        const body = `${razorpay_order_id}|${razorpay_payment_id}`;
-
+        const signatureBody = `${razorpay_order_id}|${razorpay_payment_id}`;
         const expectedSignature = crypto
             .createHmac("sha256", keySecret)
-            .update(body)
+            .update(signatureBody)
             .digest("hex");
 
-        if (expectedSignature !== razorpay_signature) {
+        const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+        const receivedBuffer = Buffer.from(String(razorpay_signature), "utf8");
+
+        const signatureValid =
+            expectedBuffer.length === receivedBuffer.length &&
+            crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+
+        if (!signatureValid) {
             await this.repo.markFailed(transactionId);
-            throw new Error("Invalid payment signature");
+            throw new Error("Invalid Razorpay payment signature");
         }
 
-        await this.repo.markSuccess(transactionId, razorpay_payment_id);
+        // Never trust only the mobile callback. Confirm the payment directly
+        // with Razorpay before updating the order in MongoDB.
+        const razorpay = new Razorpay({
+            key_id: keyId,
+            key_secret: keySecret,
+        });
 
+        let razorpayPayment: any;
+
+        try {
+            razorpayPayment = await razorpay.payments.fetch(
+                razorpay_payment_id
+            );
+        } catch (error: any) {
+            console.error("Razorpay payment fetch failed:", error?.error || error);
+            throw new Error(
+                "Payment was received but confirmation is temporarily unavailable. Please retry verification."
+            );
+        }
+
+        if (razorpayPayment?.order_id !== razorpay_order_id) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Payment does not belong to this Razorpay order");
+        }
+
+        const expectedAmountInPaise = Math.round(
+            Number(transaction.amount || 0) * 100
+        );
+        const razorpayAmountInPaise = Number(razorpayPayment?.amount || 0);
+
+        if (
+            expectedAmountInPaise <= 0 ||
+            razorpayAmountInPaise !== expectedAmountInPaise
+        ) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Payment amount mismatch");
+        }
+
+        const expectedCurrency = String(transaction.currency || "INR").toUpperCase();
+        const razorpayCurrency = String(
+            razorpayPayment?.currency || ""
+        ).toUpperCase();
+
+        if (razorpayCurrency !== expectedCurrency) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Payment currency mismatch");
+        }
+
+        // In rare cases Checkout returns while payment is only authorized.
+        // Capture it from the server and then continue only after capture.
+        if (razorpayPayment.status === "authorized") {
+            try {
+                razorpayPayment = await razorpay.payments.capture(
+                    razorpay_payment_id,
+                    expectedAmountInPaise,
+                    expectedCurrency
+                );
+            } catch (error: any) {
+                // It may have been auto-captured between fetch and capture.
+                razorpayPayment = await razorpay.payments.fetch(
+                    razorpay_payment_id
+                );
+            }
+        }
+
+        if (razorpayPayment?.status !== "captured") {
+            throw new Error(
+                `Payment is not captured yet. Current Razorpay status: ${razorpayPayment?.status || "unknown"
+                }`
+            );
+        }
+
+        // Update transaction first, then the parent/vendor orders.
+        // Repository methods should themselves use atomic MongoDB updates.
+        await this.repo.markSuccess(transactionId, razorpay_payment_id);
         await this.repo.markOrderPaid(orderId, transactionId);
 
-        await this.sendOrderPaidNotificationToVendors(orderId);
+        // Notifications must never decide whether payment verification succeeds.
+        void Promise.allSettled([
+            this.sendOrderPaidNotificationToVendors(orderId),
+            this.sendOrderPaidNotificationToDrivers(orderId),
+        ]);
 
         return {
             success: true,
@@ -356,6 +442,7 @@ export class PaymentTransactionService {
             alreadyProcessed: false,
             orderId: order._id,
             paymentTransaction: transaction._id,
+            razorpayPaymentId: razorpay_payment_id,
         };
     }
 
@@ -383,6 +470,77 @@ export class PaymentTransactionService {
 
     async cancel(id: string) {
         return await this.repo.cancel(id);
+    }
+
+    private async sendOrderPaidNotificationToDrivers(parentOrderId: any) {
+        try {
+            if (!parentOrderId) {
+                console.log("Driver push skipped: parentOrderId missing");
+                return;
+            }
+
+            const vendorOrders: any[] = await OrderVendorModel.find({
+                parentOrder: parentOrderId,
+                isActive: true,
+            })
+                .select(
+                    "_id orderNumber vendorOrderNumber totalAmount paymentStatus"
+                )
+                .lean();
+
+            if (!vendorOrders.length) {
+                console.log(
+                    "Driver push skipped: no vendor orders found"
+                );
+                return;
+            }
+
+            const paidVendorOrders = vendorOrders.filter(
+                (item: any) => item?.paymentStatus === "success"
+            );
+
+            const ordersForNotification = paidVendorOrders.length
+                ? paidVendorOrders
+                : vendorOrders;
+
+            const firstVendorOrder = ordersForNotification[0];
+
+            const orderNumber =
+                firstVendorOrder?.orderNumber?.toString?.() || "";
+
+            const title = "New delivery order available";
+
+            const body = orderNumber
+                ? `Paid order ${orderNumber} is ready for a driver. Open available orders to take it.`
+                : "A new paid delivery order is available. Open available orders to take it.";
+
+            const result =
+                await this.firebaseTokenService.sendDataNotificationToRole({
+                    role: "driver",
+                    title,
+                    body,
+                    data: {
+                        type: "DRIVER_NEW_PAID_ORDER",
+                        screen: "DRIVER_AVAILABLE_ORDERS",
+                        parentOrderId: parentOrderId.toString(),
+                        orderNumber,
+                        vendorOrderCount:
+                            ordersForNotification.length.toString(),
+                        sound: "order_alert",
+                        channelId: "new_paid_orders_v1",
+                    },
+                });
+
+            console.log(
+                "Driver paid-order push completed:",
+                result
+            );
+        } catch (error: any) {
+            console.log(
+                "Driver paid-order push error:",
+                error?.message || error
+            );
+        }
     }
 
     private async sendOrderPaidNotificationToVendors(parentOrderId: any) {

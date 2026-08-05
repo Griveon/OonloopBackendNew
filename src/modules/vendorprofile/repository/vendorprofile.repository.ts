@@ -111,4 +111,18 @@ export class VendorProfileRepository {
             { new: true }
         );
     }
+
+    async updateStoreLogo(userId: string, logo: string) {
+        return await VendorProfileModel.findOneAndUpdate(
+            { user: userId },
+            {
+                $set: {
+                    storeLogo: logo,
+                },
+            },
+            {
+                new: true,
+            }
+        );
+    }
 }

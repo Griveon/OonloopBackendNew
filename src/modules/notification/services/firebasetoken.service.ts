@@ -1,3 +1,5 @@
+import { getMessaging } from "firebase-admin/messaging";
+
 import type {
     SaveFirebaseTokenDTO,
     SendPushNotificationDTO,
@@ -32,22 +34,24 @@ export class FirebaseTokenService {
             throw new Error("Invalid platform");
         }
 
-        const tokenDoc = await this.firebaseTokenRepository.saveOrUpdateToken(
-            userId,
-            data
-        );
+        const tokenDoc =
+            await this.firebaseTokenRepository.saveOrUpdateToken(
+                userId,
+                data
+            );
 
         return tokenDoc;
     }
 
     async getMyTokens(userId: string) {
-        const tokens = await this.firebaseTokenRepository.findAllTokensByUserId(
-            userId
-        );
+        const tokens =
+            await this.firebaseTokenRepository.findAllTokensByUserId(
+                userId
+            );
 
         return {
             total: tokens.length,
-            active: tokens.filter((item) => item.isActive).length,
+            active: tokens.filter(item => item.isActive).length,
             tokens,
         };
     }
@@ -57,7 +61,10 @@ export class FirebaseTokenService {
             throw new Error("Firebase token is required");
         }
 
-        return await this.firebaseTokenRepository.deleteToken(userId, token);
+        return await this.firebaseTokenRepository.deleteToken(
+            userId,
+            token
+        );
     }
 
     async deactivateToken(userId: string, token: string) {
@@ -65,11 +72,16 @@ export class FirebaseTokenService {
             throw new Error("Firebase token is required");
         }
 
-        return await this.firebaseTokenRepository.deactivateToken(userId, token);
+        return await this.firebaseTokenRepository.deactivateToken(
+            userId,
+            token
+        );
     }
 
     async deactivateAllUserTokens(userId: string) {
-        return await this.firebaseTokenRepository.deactivateAllUserTokens(userId);
+        return await this.firebaseTokenRepository.deactivateAllUserTokens(
+            userId
+        );
     }
 
     async sendNotificationToUser(data: SendPushNotificationDTO) {
@@ -93,7 +105,7 @@ export class FirebaseTokenService {
         const tokens = [
             ...new Set(
                 tokenDocs
-                    .map((item) => item.token)
+                    .map(item => item.token)
                     .filter(Boolean)
             ),
         ];
@@ -106,12 +118,13 @@ export class FirebaseTokenService {
             };
         }
 
-        const result = await sendFirebaseNotificationToMultipleTokens({
-            tokens,
-            title: data.title,
-            body: data.body,
-            data: this.sanitizeNotificationData(data.data || {}),
-        });
+        const result =
+            await sendFirebaseNotificationToMultipleTokens({
+                tokens,
+                title: data.title,
+                body: data.body,
+                data: this.sanitizeNotificationData(data.data || {}),
+            });
 
         return {
             success: true,
@@ -148,7 +161,7 @@ export class FirebaseTokenService {
         const uniqueUserIds = [
             ...new Set(
                 userIds
-                    .map((item) => item?.toString?.())
+                    .map(item => item?.toString?.())
                     .filter(Boolean)
             ),
         ];
@@ -162,7 +175,7 @@ export class FirebaseTokenService {
                 );
 
             const userTokens = tokenDocs
-                .map((item) => item.token)
+                .map(item => item.token)
                 .filter(Boolean);
 
             allTokens.push(...userTokens);
@@ -171,7 +184,7 @@ export class FirebaseTokenService {
         const uniqueTokens = [
             ...new Set(
                 allTokens
-                    .map((item) => item?.toString?.())
+                    .map(item => item?.toString?.())
                     .filter(Boolean)
             ),
         ];
@@ -186,12 +199,13 @@ export class FirebaseTokenService {
             };
         }
 
-        const result = await sendFirebaseNotificationToMultipleTokens({
-            tokens: uniqueTokens,
-            title,
-            body,
-            data: this.sanitizeNotificationData(data),
-        });
+        const result =
+            await sendFirebaseNotificationToMultipleTokens({
+                tokens: uniqueTokens,
+                title,
+                body,
+                data: this.sanitizeNotificationData(data),
+            });
 
         return {
             success: true,
@@ -225,17 +239,7 @@ export class FirebaseTokenService {
             throw new Error("Notification body is required");
         }
 
-        const users = await UserModel.find({
-            $or: [
-                { role },
-                { roles: role },
-                { userRole: role },
-            ],
-            isDeleted: { $ne: true },
-            isActive: { $ne: false },
-        })
-            .select("_id")
-            .lean();
+        const users = await this.findActiveUsersByRole(role);
 
         const userIds = users
             .map((item: any) => item?._id?.toString?.())
@@ -257,6 +261,140 @@ export class FirebaseTokenService {
             body,
             data,
         });
+    }
+
+    /**
+     * Sends a DATA-ONLY high-priority push.
+     *
+     * Use this for driver paid-order alerts so the Driver app can display
+     * the notification with Notifee and its custom Android channel sound.
+     */
+    async sendDataNotificationToRole({
+        role,
+        title,
+        body,
+        data = {},
+    }: {
+        role: string;
+        title: string;
+        body: string;
+        data?: Record<string, any>;
+    }) {
+        if (!role) {
+            throw new Error("Role is required");
+        }
+
+        if (!title) {
+            throw new Error("Notification title is required");
+        }
+
+        if (!body) {
+            throw new Error("Notification body is required");
+        }
+
+        const users = await this.findActiveUsersByRole(role);
+
+        const userIds = users
+            .map((item: any) => item?._id?.toString?.())
+            .filter(Boolean);
+
+        if (!userIds.length) {
+            return {
+                success: false,
+                message: `No active users found for role: ${role}`,
+                totalUsers: 0,
+                totalTokens: 0,
+                result: null,
+            };
+        }
+
+        const allTokens: string[] = [];
+
+        for (const userId of userIds) {
+            const tokenDocs =
+                await this.firebaseTokenRepository.findActiveTokensByUserId(
+                    userId
+                );
+
+            allTokens.push(
+                ...tokenDocs
+                    .map(item => item.token)
+                    .filter(Boolean)
+            );
+        }
+
+        const uniqueTokens = [
+            ...new Set(
+                allTokens
+                    .map(token => token?.toString?.())
+                    .filter(Boolean)
+            ),
+        ];
+
+        if (!uniqueTokens.length) {
+            return {
+                success: false,
+                message: `No active Firebase tokens found for role: ${role}`,
+                totalUsers: userIds.length,
+                totalTokens: 0,
+                result: null,
+            };
+        }
+
+        const notificationData = this.sanitizeNotificationData({
+            ...data,
+            title,
+            body,
+        });
+
+        const batchSize = 500;
+
+        let successCount = 0;
+        let failureCount = 0;
+        const responses: any[] = [];
+
+        for (
+            let index = 0;
+            index < uniqueTokens.length;
+            index += batchSize
+        ) {
+            const tokens = uniqueTokens.slice(
+                index,
+                index + batchSize
+            );
+
+            const result = await getMessaging().sendEachForMulticast({
+                tokens,
+                data: notificationData,
+                android: {
+                    priority: "high",
+                },
+                apns: {
+                    headers: {
+                        "apns-priority": "5",
+                    },
+                    payload: {
+                        aps: {
+                            contentAvailable: true,
+                        },
+                    },
+                },
+            });
+
+            successCount += result.successCount;
+            failureCount += result.failureCount;
+            responses.push(result);
+        }
+
+        return {
+            success: successCount > 0,
+            message: "Data notification processing completed",
+            totalUsers: userIds.length,
+            totalTokens: uniqueTokens.length,
+            successCount,
+            failureCount,
+            result: responses,
+        };
     }
 
     async sendNotificationToToken({
@@ -290,6 +428,20 @@ export class FirebaseTokenService {
         });
 
         return result;
+    }
+
+    private async findActiveUsersByRole(role: string) {
+        return await UserModel.find({
+            $or: [
+                { role },
+                { roles: role },
+                { userRole: role },
+            ],
+            isDeleted: { $ne: true },
+            isActive: { $ne: false },
+        } as any)
+            .select("_id")
+            .lean();
     }
 
     private sanitizeNotificationData(data: Record<string, any>) {

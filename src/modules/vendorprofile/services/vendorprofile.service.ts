@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import type { IVendorDocument } from "../interfaces/vendorprofile.interface.js";
 import { VendorProfileRepository } from "../repository/vendorprofile.repository.js";
 import { UserRepository } from "../../user/repositories/user.repository.js";
+import { uploadVendorProfileImageToR2 } from "../utils/uploadVendorProfileImageToR2.js";
 
 export class VendorProfileService {
     private vendorRepo: VendorProfileRepository;
@@ -138,6 +139,12 @@ export class VendorProfileService {
             isOnHoliday,
             holidayMessage
         );
+    }
+
+    async updateProfileImage(userId: string, file: Express.Multer.File) {
+        const image = await uploadVendorProfileImageToR2(file, userId);
+
+        return await this.vendorRepo.updateStoreLogo(userId, image);
     }
 
 }

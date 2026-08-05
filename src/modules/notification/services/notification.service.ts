@@ -30,16 +30,87 @@ export class NotificationService {
             throw new Error("Invalid notification target type");
         }
 
-        if (data.targetType === "users") {
-            if (!data.userIds || !Array.isArray(data.userIds) || data.userIds.length === 0) {
-                throw new Error("User IDs are required");
-            }
-        }
-
         if (data.targetType === "role") {
             if (!data.role?.trim()) {
                 throw new Error("Role is required");
             }
+        }
+
+        let finalUserIds: string[] = [];
+
+        /*
+            ✅ If targetType = users and userIds are not sent from frontend,
+            then we fetch all active users from UserModel automatically.
+        */
+        if (data.targetType === "users") {
+            if (data.userIds && Array.isArray(data.userIds) && data.userIds.length > 0) {
+                finalUserIds = data.userIds.map((id: any) => id.toString());
+            } else {
+                const users = await UserModel.find({
+                    isDeleted: { $ne: true },
+                    isActive: { $ne: false },
+                })
+                    .select("_id")
+                    .lean();
+
+                finalUserIds = users
+                    .map((item: any) => item?._id?.toString?.())
+                    .filter(Boolean);
+            }
+
+            if (finalUserIds.length === 0) {
+                throw new Error("No active users found for notification");
+            }
+
+            data.userIds = finalUserIds as any;
+        }
+
+        /*
+            ✅ If targetType = all, also fetch all active users and save them
+            into notification payload.
+        */
+        if (data.targetType === "all") {
+            const users = await UserModel.find({
+                isDeleted: { $ne: true },
+                isActive: { $ne: false },
+            })
+                .select("_id")
+                .lean();
+
+            finalUserIds = users
+                .map((item: any) => item?._id?.toString?.())
+                .filter(Boolean);
+
+            if (finalUserIds.length === 0) {
+                throw new Error("No active users found for notification");
+            }
+
+            data.userIds = finalUserIds as any;
+        }
+
+        if (data.targetType === "role") {
+            const role = data.role?.trim();
+
+            if (!role) {
+                throw new Error("Role is required");
+            }
+
+            const users = await UserModel.find({
+                role,
+            } as any)
+                .select("_id")
+                .lean();
+
+            finalUserIds = users
+                .map((item: any) => item?._id?.toString?.())
+                .filter(Boolean);
+
+            if (finalUserIds.length === 0) {
+                throw new Error(`No active users found for role: ${role}`);
+            }
+
+            data.role = role;
+            data.userIds = finalUserIds as any;
         }
 
         const notification = await this.notificationRepository.createNotification(
@@ -61,7 +132,7 @@ export class NotificationService {
 
             if (data.targetType === "users") {
                 sendResult = await this.firebaseTokenService.sendNotificationToUsers({
-                    userIds: data.userIds || [],
+                    userIds: finalUserIds,
                     title: data.title,
                     body: data.paragraph,
                     data: pushData,
@@ -69,8 +140,8 @@ export class NotificationService {
             }
 
             if (data.targetType === "role") {
-                sendResult = await this.firebaseTokenService.sendNotificationToRole({
-                    role: data.role || "",
+                sendResult = await this.firebaseTokenService.sendNotificationToUsers({
+                    userIds: finalUserIds,
                     title: data.title,
                     body: data.paragraph,
                     data: pushData,
@@ -78,42 +149,35 @@ export class NotificationService {
             }
 
             if (data.targetType === "all") {
-                const users = await UserModel.find({
-                    isDeleted: { $ne: true },
-                    isActive: { $ne: false },
-                })
-                    .select("_id")
-                    .lean();
-
-                const userIds = users
-                    .map((item: any) => item?._id?.toString?.())
-                    .filter(Boolean);
-
                 sendResult = await this.firebaseTokenService.sendNotificationToUsers({
-                    userIds,
+                    userIds: finalUserIds,
                     title: data.title,
                     body: data.paragraph,
                     data: pushData,
                 });
             }
 
+            const successCount =
+                sendResult?.result?.successCount ||
+                sendResult?.result?.responses?.filter((item: any) => item.success)
+                    ?.length ||
+                0;
+
+            const failureCount =
+                sendResult?.result?.failureCount ||
+                sendResult?.result?.responses?.filter((item: any) => !item.success)
+                    ?.length ||
+                0;
+
             const updatedNotification =
                 await this.notificationRepository.updateNotificationStatus(
                     notification._id.toString(),
                     {
                         status: sendResult?.success ? "sent" : "failed",
-                        totalUsers: sendResult?.totalUsers || 0,
+                        totalUsers: sendResult?.totalUsers || finalUserIds.length || 0,
                         totalTokens: sendResult?.totalTokens || 0,
-                        successCount:
-                            sendResult?.result?.successCount ||
-                            sendResult?.result?.responses?.filter((item: any) => item.success)
-                                ?.length ||
-                            0,
-                        failureCount:
-                            sendResult?.result?.failureCount ||
-                            sendResult?.result?.responses?.filter((item: any) => !item.success)
-                                ?.length ||
-                            0,
+                        successCount,
+                        failureCount,
                         sentAt: new Date(),
                     }
                 );
@@ -130,6 +194,7 @@ export class NotificationService {
                     notification._id.toString(),
                     {
                         status: "failed",
+                        totalUsers: finalUserIds.length || 0,
                         sentAt: new Date(),
                     }
                 );

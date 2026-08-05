@@ -5,22 +5,27 @@ const UserSchema: Schema<IUserDocument> = new Schema(
     {
         firstName: {
             type: String,
-            required: true,
             trim: true,
+            default: null,
         },
 
         lastName: {
             type: String,
             trim: true,
+            default: null,
         },
 
         email: {
             type: String,
-            required: true,
-            unique: true,
             lowercase: true,
             trim: true,
-            index: true,
+            default: undefined,
+            set: (value: string) => {
+                if (!value || value.trim() === "") {
+                    return undefined;
+                }
+                return value.toLowerCase().trim();
+            },
         },
 
         mobileNumber: {
@@ -28,20 +33,22 @@ const UserSchema: Schema<IUserDocument> = new Schema(
             unique: true,
             sparse: true,
             trim: true,
+            required: false,
         },
 
         dateOfBirth: {
             type: Date,
+            default: null,
         },
 
         gender: {
             type: String,
             enum: ["male", "female", "other"],
+            default: null,
         },
 
         password: {
             type: String,
-            required: true,
         },
 
         status: {
@@ -57,43 +64,54 @@ const UserSchema: Schema<IUserDocument> = new Schema(
 
         emailVerificationToken: {
             type: String,
+            default: null,
         },
 
         pin: {
             type: String,
-            required: false,
             trim: true,
             minlength: 6,
             maxlength: 6,
+            default: null,
         },
 
         role: {
             type: String,
-            enum: ["user", "vendor", "driver"],
+            enum: ["admin", "user", "vendor", "driver"],
             required: true,
             default: "user",
         },
 
         roles: {
             type: [String],
-            enum: ["user", "vendor", "driver"],
+            enum: ["admin", "user", "vendor", "driver"],
             default: ["user"],
         },
 
-
         resetPasswordToken: {
             type: String,
+            default: null,
         },
 
         resetPasswordExpire: {
             type: Date,
+            default: null,
         },
 
         lastLogin: {
             type: Date,
+            default: null,
         },
-        otp: { type: String },
-        otpExpiry: { type: Number },
+
+        otp: {
+            type: String,
+            default: null,
+        },
+
+        otpExpiry: {
+            type: Number,
+            default: null,
+        },
     },
     {
         timestamps: true,
@@ -112,6 +130,8 @@ UserSchema.pre("save", function (next) {
     }
 
     user.roles = [...new Set(user.roles)];
+
+    // next();
 });
 
 export const UserModel: Model<IUserDocument> = mongoose.model<IUserDocument>(

@@ -2,7 +2,7 @@ import { UserModel } from "../models/user.model.js";
 import type { IUser } from "../interfaces/user.interface.js";
 import { DriverProfileModel } from "../../driverprofile/models/driverprofile.model.js";
 
-type UserRole = "user" | "vendor" | "driver";
+type UserRole = "admin" |"user" | "vendor" | "driver";
 
 export class UserRepository {
     async createUser(data: Partial<IUser>) {

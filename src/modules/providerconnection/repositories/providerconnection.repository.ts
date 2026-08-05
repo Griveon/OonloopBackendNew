@@ -26,7 +26,7 @@ export class ProviderConnectionRepository {
             provider,
             environment,
             isDeleted: false,
-        });
+        } as any);
     }
 
     async update(id: string, data: Partial<IProviderConnection>) {

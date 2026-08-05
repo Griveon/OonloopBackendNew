@@ -54,7 +54,10 @@ export class VendorCategoryController {
 
     getAll = async (req: Request, res: Response) => {
         try {
-            const result = await this.service.getAll();
+            const role = req.query.role as string | undefined;
+
+            const result = await this.service.getAll(role);
+
 
             return res
                 .status(200)

@@ -55,11 +55,15 @@ export class CategoryProductsRepository {
                 },
             }).select("user");
 
+            console.log("Nearby Vendors:", nearbyVendors);
+
             vendorIds = nearbyVendors
                 .map((v) => v.user)
                 .filter(Boolean)
                 .map((id) => new mongoose.Types.ObjectId(id));
         }
+
+        console.log(vendorIds);
 
         if (!vendorIds.length) {
             return {
@@ -68,11 +72,82 @@ export class CategoryProductsRepository {
             };
         }
 
+        const now = new Date();
+
+        const indiaTime = new Date(
+            now.toLocaleString("en-US", {
+                timeZone: "Asia/Kolkata",
+            })
+        );
+
+        const currentMinutes =
+            indiaTime.getHours() * 60 + indiaTime.getMinutes();
+
+
         const match: any = {
             vendorId: {
                 $in: vendorIds,
             },
             isActive: true,
+
+            $and: [
+                {
+                    $or: [
+                        {
+                            "availability.type": "always",
+                        },
+                        {
+                            $and: [
+                                { "availability.type": "scheduled" },
+                                {
+                                    $expr: {
+                                        $cond: [
+                                            {
+                                                $lte: [
+                                                    "$availability.fromMinutes",
+                                                    "$availability.toMinutes",
+                                                ],
+                                            },
+                                            {
+                                                $and: [
+                                                    {
+                                                        $lte: [
+                                                            "$availability.fromMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                    {
+                                                        $gte: [
+                                                            "$availability.toMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                            {
+                                                $or: [
+                                                    {
+                                                        $lte: [
+                                                            "$availability.fromMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                    {
+                                                        $gte: [
+                                                            "$availability.toMinutes",
+                                                            currentMinutes,
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                }
+            ],
         };
 
         if (categoryId && categoryId !== "all") {
@@ -151,7 +226,7 @@ export class CategoryProductsRepository {
                 (cat) => cat._id
             );
 
-            match.$or = [
+            const searchConditions: any[] = [
                 {
                     name: {
                         $regex: searchText,
@@ -167,20 +242,37 @@ export class CategoryProductsRepository {
             ];
 
             if (matchingProductCategoryIds.length > 0) {
-                match.$or.push({
+                searchConditions.push({
                     productCategory: {
                         $in: matchingProductCategoryIds,
                     },
                 });
             }
+
+            match.$and.push({
+                $or: searchConditions,
+            });
         }
 
         const [products, total] = await Promise.all([
             ProductModel.find(match)
-                .populate("productCategory")
-                .populate("category")
-                .populate("unit")
-                .populate("ribbon")
+                .populate({
+                    path: "productCategory",
+                })
+                .populate({
+                    path: "category",
+                })
+                .populate({
+                    path: "unit",
+                    select: "name shortName symbol unitValue",
+                })
+                .populate({
+                    path: "variants.unit",
+                    select: "name shortName symbol unitValue",
+                })
+                .populate({
+                    path: "ribbon",
+                })
                 .sort({
                     createdAt: -1,
                 })
@@ -195,5 +287,105 @@ export class CategoryProductsRepository {
             products,
             total,
         };
+    }
+
+    async findRestaurantsByCategory(
+        categoryId: string,
+        lat: number,
+        lng: number,
+        maxDistance: number,
+        search: string = ""
+    ) {
+        const nearbyVendors = await VendorProfileModel.find({
+            "storeLocationAddress.location": {
+                $geoWithin: {
+                    $centerSphere: [
+                        [lng, lat],
+                        maxDistance / 6378100,
+                    ],
+                },
+            },
+        })
+            .select("user storeName profileImage")
+            .lean();
+
+        const vendorIds = nearbyVendors
+            .map((v) => v.user)
+            .filter(Boolean);
+
+        if (!vendorIds.length) {
+            return [];
+        }
+
+        const match: any = {
+            vendorId: { $in: vendorIds },
+            category: new mongoose.Types.ObjectId(categoryId),
+            isActive: true,
+        };
+
+        if (search?.trim()) {
+            match.name = {
+                $regex: search.trim(),
+                $options: "i",
+            };
+        }
+
+        const restaurants = await ProductModel.aggregate([
+            {
+                $match: match,
+            },
+            {
+                $group: {
+                    _id: "$vendorId",
+                    totalProducts: { $sum: 1 },
+                },
+            },
+            {
+                $lookup: {
+                    from: "vendorprofiles",
+                    localField: "_id",
+                    foreignField: "user",
+                    as: "vendor",
+                },
+            },
+            {
+                $unwind: "$vendor",
+            },
+            {
+                $project: {
+                    _id: "$vendor.user",
+                    vendorProfileId: "$vendor._id",
+
+                    storeName: "$vendor.storeName",
+                    storeSlug: "$vendor.storeSlug",
+                    storeLogo: "$vendor.storeLogo",
+
+                    totalProducts: 1,
+
+                    workingHours: "$vendor.workingHours",
+                    workingDays: "$vendor.workingDays",
+
+                    isVerified: "$vendor.isVerified",
+                    isKycApproved: "$vendor.isKycApproved",
+                    profileStatus: "$vendor.profileStatus",
+
+                    isOnHoliday: "$vendor.isOnHoliday",
+                    holidayMessage: "$vendor.holidayMessage",
+
+                    address: {
+                        city: "$vendor.storeLocationAddress.city",
+                        state: "$vendor.storeLocationAddress.state",
+                        country: "$vendor.storeLocationAddress.country",
+                    },
+                },
+            },
+            {
+                $sort: {
+                    storeName: 1,
+                },
+            },
+        ]);
+
+        return restaurants;
     }
 }

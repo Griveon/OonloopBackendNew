@@ -2,12 +2,12 @@ import { Document } from "mongoose";
 
 export type UserStatus = "active" | "inactive" | "suspended";
 export type Gender = "male" | "female" | "other";
-export type UserRole = "user" | "vendor" | "driver";
+export type UserRole = "admin" | "user" | "vendor" | "driver";
 
 export interface IUser {
     firstName: string;
     lastName?: string;
-    email: string;
+    email: any;
     password: string;
     mobileNumber?: string;
     dateOfBirth?: Date;

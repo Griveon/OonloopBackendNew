@@ -110,4 +110,11 @@ vendorProfileRoutes.delete(
     vendorKYCController.deleteKycDocument
 );
 
+vendorProfileRoutes.put(
+    "/profileimage",
+    authMiddleware,
+    upload.single("profileImage"),
+    controller.updateProfileImage
+);
+
 export default vendorProfileRoutes;

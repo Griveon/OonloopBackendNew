@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
+import dns from "node:dns";
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 import appRoutes from "./routes/app.routes.js";
 // import { migrate } from "./productrunscript.js";
