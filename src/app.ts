@@ -4,11 +4,21 @@ import helmet from "helmet";
 import compression from "compression";
 import dns from "node:dns";
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
+import path from "path";
 
 import appRoutes from "./routes/app.routes.js";
 // import { migrate } from "./productrunscript.js";
 
 const app = express();
+
+/**
+ * Static mock assets (dev/demo) — served before helmet so cross-origin image
+ * loads from the app aren't blocked. e.g. GET /mock-assets/qrcode.jpeg
+ */
+app.use(
+    "/mock-assets",
+    express.static(path.resolve(process.cwd(), "src/mock_assets"))
+);
 
 /**
  * Security

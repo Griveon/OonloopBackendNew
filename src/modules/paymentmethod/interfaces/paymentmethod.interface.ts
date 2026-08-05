@@ -12,6 +12,10 @@ export interface IPaymentMethod {
 
     isActive: boolean;
 
+    // DEV-ONLY: when true, payments using this method succeed instantly
+    // without a real gateway (gated by ALLOW_DEMO_PAYMENT env).
+    isDemo?: boolean;
+
     priority: number;
 
     charges?: {

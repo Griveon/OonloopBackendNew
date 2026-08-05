@@ -19,6 +19,18 @@ paymentTransactionsRoutes.post(
     controller.createOrderTransaction
 );
 
+paymentTransactionsRoutes.post(
+    "/createbooking",
+    authMiddleware,
+    controller.createBookingTransaction
+);
+
+paymentTransactionsRoutes.post(
+    "/verifybooking",
+    authMiddleware,
+    controller.verifyBooking
+);
+
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);
 
 paymentTransactionsRoutes.post("/verify", authMiddleware, controller.verify);

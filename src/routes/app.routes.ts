@@ -36,6 +36,7 @@ import firebaseTokenRoutes from "../modules/notification/routes/firebasetoken.ro
 import vendorAccountStatementRoutes from "../modules/vendoraccountstatements/routes/vendoraccountsroutes.js";
 import notificationRoutes from "../modules/notification/routes/notification.routes.js";
 import userReportRoutes from "../modules/usersreport/routes/userreport.routes.js";
+import personalShopperRoutes from "../modules/personalshopper/routes/personalshopper.routes.js";
 
 userAuthRoutes
 
@@ -123,6 +124,8 @@ router.use("/notifications", notificationRoutes);
 router.use("/vendoraccountstatements", vendorAccountStatementRoutes);
 
 router.use("/userreports", userReportRoutes);
+
+router.use("/personalshopper", personalShopperRoutes);
 
 
 

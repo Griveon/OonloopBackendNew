@@ -25,6 +25,12 @@ const PaymentMethodSchema = new Schema<IPaymentMethodDocument>(
             default: true,
         },
 
+        // DEV-ONLY demo method (instant success, no gateway)
+        isDemo: {
+            type: Boolean,
+            default: false,
+        },
+
         priority: {
             type: Number,
             default: 1,

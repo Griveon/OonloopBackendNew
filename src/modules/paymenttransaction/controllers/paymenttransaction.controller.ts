@@ -42,6 +42,35 @@ export class PaymentTransactionController {
         }
     };
 
+    createBookingTransaction = async (req: Request, res: Response) => {
+        try {
+            const body = { ...req.body, userId: req.user?.id ?? req.body.userId };
+            const result = await this.service.createBookingTransaction(body);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Transaction created", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    verifyBooking = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.verifyBookingPayment(req.body);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Booking payment verified", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (_: Request, res: Response) => {
         try {
             const result = await this.service.getAll();

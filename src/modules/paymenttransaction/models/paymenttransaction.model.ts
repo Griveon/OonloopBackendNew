@@ -13,7 +13,8 @@ const PaymentTransactionSchema: Schema<IPaymentTransactionDocument> =
             providerConnection: {
                 type: Schema.Types.ObjectId,
                 ref: "ProviderConnection",
-                required: true,
+                // Not required: demo/dev transactions have no real gateway provider.
+                // Real gateway transactions always set this.
             },
 
             amount: {

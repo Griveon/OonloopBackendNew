@@ -2,6 +2,7 @@ import { PaymentTransactionModel } from "../models/paymenttransaction.model.js";
 import type { IPaymentTransaction } from "../interfaces/paymenttransaction.interface.js";
 import { OrderModel } from "../../order/models/order.model.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
+import { PersonalShopperBookingModel } from "../../personalshopper/models/personalshopper.model.js";
 
 export class PaymentTransactionRepository {
 
@@ -167,5 +168,25 @@ export class PaymentTransactionRepository {
         );
 
         return updatedOrder;
+    }
+
+    // ----- Personal Shopper booking -----
+    async findBookingById(id: string) {
+        return await PersonalShopperBookingModel.findOne({
+            _id: id,
+            isActive: true,
+        });
+    }
+
+    async markBookingPaid(bookingId: string, transactionId: string) {
+        return await PersonalShopperBookingModel.findByIdAndUpdate(
+            bookingId,
+            {
+                paymentTransaction: transactionId,
+                paymentStatus: "paid",
+                status: "confirmed",
+            },
+            { new: true }
+        );
     }
 }
