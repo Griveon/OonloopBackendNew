@@ -186,7 +186,6 @@ export class ProductRepository {
         return ProductModel.find({
             isActive: true,
             vendorId: { $in: vendorIds },
-            ...this.getAvailableProductFilter(),
         })
             .sort({ createdAt: -1 })
             .limit(limit)
@@ -207,7 +206,6 @@ export class ProductRepository {
         const filter = {
             vendorId,
             isActive: true,
-            ...this.getAvailableProductFilter(),
         };
 
         const [items, total] = await Promise.all([

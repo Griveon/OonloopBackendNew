@@ -72,82 +72,16 @@ export class CategoryProductsRepository {
             };
         }
 
-        const now = new Date();
-
-        const indiaTime = new Date(
-            now.toLocaleString("en-US", {
-                timeZone: "Asia/Kolkata",
-            })
-        );
-
-        const currentMinutes =
-            indiaTime.getHours() * 60 + indiaTime.getMinutes();
-
-
         const match: any = {
             vendorId: {
                 $in: vendorIds,
             },
             isActive: true,
 
-            $and: [
-                {
-                    $or: [
-                        {
-                            "availability.type": "always",
-                        },
-                        {
-                            $and: [
-                                { "availability.type": "scheduled" },
-                                {
-                                    $expr: {
-                                        $cond: [
-                                            {
-                                                $lte: [
-                                                    "$availability.fromMinutes",
-                                                    "$availability.toMinutes",
-                                                ],
-                                            },
-                                            {
-                                                $and: [
-                                                    {
-                                                        $lte: [
-                                                            "$availability.fromMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                    {
-                                                        $gte: [
-                                                            "$availability.toMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                ],
-                                            },
-                                            {
-                                                $or: [
-                                                    {
-                                                        $lte: [
-                                                            "$availability.fromMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                    {
-                                                        $gte: [
-                                                            "$availability.toMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                ],
-                                            },
-                                        ],
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                }
-            ],
+            // Availability schedule filter removed — products are no longer
+            // hidden outside their window; the client uses `availability` to
+            // display/grey them. $and kept for the search push below.
+            $and: [],
         };
 
         if (categoryId && categoryId !== "all") {
@@ -252,6 +186,11 @@ export class CategoryProductsRepository {
             match.$and.push({
                 $or: searchConditions,
             });
+        }
+
+        // Drop the $and if nothing (e.g. search) was pushed into it.
+        if (Array.isArray(match.$and) && match.$and.length === 0) {
+            delete match.$and;
         }
 
         const [products, total] = await Promise.all([

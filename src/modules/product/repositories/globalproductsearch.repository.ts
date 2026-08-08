@@ -10,83 +10,12 @@ export class ProductSearchRepository {
 
         const skip = (page - 1) * limit;
 
-        const now = new Date();
-
-        const indiaTime = new Date(
-            now.toLocaleString("en-US", {
-                timeZone: "Asia/Kolkata",
-            })
-        );
-
-        const currentMinutes =
-            indiaTime.getHours() * 60 + indiaTime.getMinutes();
-
         const query = {
             isActive: true,
-            $and: [
-                {
-                    $or: [
-                        { name: { $regex: keyword, $options: "i" } },
-                        { description: { $regex: keyword, $options: "i" } },
-                        { slug: { $regex: keyword, $options: "i" } },
-                    ],
-                },
-                {
-                    $or: [
-                        {
-                            "availability.type": "always",
-                        },
-                        {
-                            $and: [
-                                { "availability.type": "scheduled" },
-                                {
-                                    $expr: {
-                                        $cond: [
-                                            {
-                                                $lte: [
-                                                    "$availability.fromMinutes",
-                                                    "$availability.toMinutes",
-                                                ],
-                                            },
-                                            {
-                                                $and: [
-                                                    {
-                                                        $lte: [
-                                                            "$availability.fromMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                    {
-                                                        $gte: [
-                                                            "$availability.toMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                ],
-                                            },
-                                            {
-                                                $or: [
-                                                    {
-                                                        $lte: [
-                                                            "$availability.fromMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                    {
-                                                        $gte: [
-                                                            "$availability.toMinutes",
-                                                            currentMinutes,
-                                                        ],
-                                                    },
-                                                ],
-                                            },
-                                        ],
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                }
+            $or: [
+                { name: { $regex: keyword, $options: "i" } },
+                { description: { $regex: keyword, $options: "i" } },
+                { slug: { $regex: keyword, $options: "i" } },
             ],
         };
 
