@@ -3,6 +3,7 @@ import type { IPaymentTransaction } from "../interfaces/paymenttransaction.inter
 import { OrderModel } from "../../order/models/order.model.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 import { PersonalShopperBookingModel } from "../../personalshopper/models/personalshopper.model.js";
+import { PreorderOrderModel } from "../../preorder/models/preorderorder.model.js";
 
 export class PaymentTransactionRepository {
 
@@ -185,6 +186,39 @@ export class PaymentTransactionRepository {
                 paymentTransaction: transactionId,
                 paymentStatus: "paid",
                 status: "confirmed",
+            },
+            { new: true }
+        );
+    }
+
+    // ----- Preorder -----
+    async findPreorderById(id: string) {
+        return await PreorderOrderModel.findOne({
+            _id: id,
+            isActive: true,
+        });
+    }
+
+    async markPreorderPaid(preorderId: string, transactionId: string) {
+        const paidAt = new Date();
+        return await PreorderOrderModel.findByIdAndUpdate(
+            preorderId,
+            {
+                $set: {
+                    paymentTransaction: transactionId,
+                    paymentStatus: "success",
+                    status: "placed",
+                    placedAt: paidAt,
+                },
+                $push: {
+                    trackingHistory: {
+                        title: "Payment successful",
+                        status: "placed",
+                        remark: "Payment successful and preorder placed",
+                        updatedByRole: "system",
+                        updatedAt: paidAt,
+                    },
+                },
             },
             { new: true }
         );
