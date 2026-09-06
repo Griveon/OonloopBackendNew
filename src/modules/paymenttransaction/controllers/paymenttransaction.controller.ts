@@ -71,6 +71,35 @@ export class PaymentTransactionController {
         }
     };
 
+    createPreorderTransaction = async (req: Request, res: Response) => {
+        try {
+            const body = { ...req.body, userId: req.user?.id ?? req.body.userId };
+            const result = await this.service.createPreorderTransaction(body);
+
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Transaction created", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    verifyPreorder = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.verifyPreorderPayment(req.body);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Preorder payment verified", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     getAll = async (_: Request, res: Response) => {
         try {
             const result = await this.service.getAll();

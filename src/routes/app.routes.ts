@@ -38,6 +38,7 @@ import notificationRoutes from "../modules/notification/routes/notification.rout
 import userReportRoutes from "../modules/usersreport/routes/userreport.routes.js";
 import personalShopperRoutes from "../modules/personalshopper/routes/personalshopper.routes.js";
 import userPreferenceRoutes from "../modules/userpreference/routes/userprefrence.routes.js";
+import preorderRoutes from "../modules/preorder/routes/preorder.routes.js";
 
 userAuthRoutes
 
@@ -133,6 +134,8 @@ router.use("/vendoraccountstatements", vendorAccountStatementRoutes);
 router.use("/userreports", userReportRoutes);
 
 router.use("/personalshopper", personalShopperRoutes);
+
+router.use("/preorder", preorderRoutes);
 
 
 
