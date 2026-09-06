@@ -712,21 +712,27 @@ export class DriverOrderService {
             );
         }
 
-        const parentOrder: any = await OrderModel.findById(currentOrder.parentOrder);
+        const parentOrder: any = await OrderModel.findById(
+            currentOrder.parentOrder
+        );
 
         if (!parentOrder) {
             throw new Error("Parent order not found");
         }
 
         const now = new Date();
-        const existingVendorOrderCount = await OrderVendorModel.countDocuments({
-            parentOrder: currentOrder.parentOrder,
-        });
+
+        const existingVendorOrderCount =
+            await OrderVendorModel.countDocuments({
+                parentOrder: currentOrder.parentOrder,
+            });
 
         const currentItems = Array.isArray(currentOrder.items)
             ? currentOrder.items.map((item: any) => {
                 const plainItem =
-                    typeof item.toObject === "function" ? item.toObject() : { ...item };
+                    typeof item.toObject === "function"
+                        ? item.toObject()
+                        : { ...item };
 
                 return plainItem;
             })
@@ -746,7 +752,9 @@ export class DriverOrderService {
 
             const inputItem = payload.items.find((item) => {
                 const inputProductId = String(item.product || "");
-                const inputVariantId = item.variant ? String(item.variant) : "";
+                const inputVariantId = item.variant
+                    ? String(item.variant)
+                    : "";
 
                 return (
                     inputProductId === currentProductId &&
@@ -754,17 +762,22 @@ export class DriverOrderService {
                 );
             });
 
+            // If driver didn't send this item, keep it unchanged.
             if (!inputItem) {
                 pickedItems.push(currentItem);
                 continue;
             }
+
+            console.log("Processing input item:", inputItem);
 
             const originalQuantity = Number(currentItem.quantity || 0);
             const pickedQuantity = Number(inputItem.pickedQuantity || 0);
             const shortQuantity = Number(inputItem.shortQuantity || 0);
 
             if (pickedQuantity < 0 || shortQuantity < 0) {
-                throw new Error("Picked quantity and short quantity cannot be negative");
+                throw new Error(
+                    "Picked quantity and short quantity cannot be negative"
+                );
             }
 
             if (pickedQuantity + shortQuantity !== originalQuantity) {
@@ -773,22 +786,46 @@ export class DriverOrderService {
                 );
             }
 
-            if (shortQuantity > 0 && !inputItem.newVendor) {
-                throw new Error(`${currentItem.name}: newVendor is required for short quantity`);
+            // Only require/validate newVendor when there is a shortage.
+            if (shortQuantity > 0) {
+                if (!inputItem.newVendor) {
+                    throw new Error(
+                        `${currentItem.name}: newVendor is required for short quantity`
+                    );
+                }
+
+                if (
+                    String(inputItem.newVendor) ===
+                    String(currentOrder.vendor)
+                ) {
+                    throw new Error(
+                        "New vendor must be different from current vendor"
+                    );
+                }
             }
 
-            if (String(inputItem.newVendor) === String(currentOrder.vendor)) {
-                throw new Error("New vendor must be different from current vendor");
-            }
-
+            // ---------------------------------------------------------
+            // CASE 1:
+            // Driver picked some quantity from current seller.
+            // ---------------------------------------------------------
             if (pickedQuantity > 0) {
                 pickedItems.push({
                     ...currentItem,
                     quantity: pickedQuantity,
-                    total: Math.round(Number(currentItem.price || 0) * pickedQuantity * 100) / 100,
+                    total:
+                        Math.round(
+                            Number(currentItem.price || 0) *
+                            pickedQuantity *
+                            100
+                        ) / 100,
                 });
             }
 
+            // ---------------------------------------------------------
+            // CASE 2:
+            // Driver picked 0 OR partial quantity.
+            // Shortage goes to new seller.
+            // ---------------------------------------------------------
             if (shortQuantity > 0) {
                 const vendorId = String(inputItem.newVendor);
 
@@ -797,7 +834,9 @@ export class DriverOrderService {
                 }
 
                 shortageGroups.get(vendorId)!.push({
-                    product: currentItem.product?._id || currentItem.product,
+                    product:
+                        currentItem.product?._id ||
+                        currentItem.product,
                     variant: currentItem.variant || null,
                     name: currentItem.name,
                     sku: currentItem.sku,
@@ -805,32 +844,48 @@ export class DriverOrderService {
                     mrp: currentItem.mrp,
                     quantity: shortQuantity,
                     images: currentItem.images || [],
-                    total: Math.round(Number(currentItem.price || 0) * shortQuantity * 100) / 100,
+                    total:
+                        Math.round(
+                            Number(currentItem.price || 0) *
+                            shortQuantity *
+                            100
+                        ) / 100,
                 });
             }
         }
 
+        // There must be at least one shortage to create a reassignment.
         if (shortageGroups.size === 0) {
-            throw new Error("No shortage quantity found for reassignment");
+            throw new Error(
+                "No shortage quantity found for reassignment"
+            );
         }
 
-        const pickedSubtotal = Math.round(
-            pickedItems.reduce((sum: number, item: any) => {
-                return sum + Number(item.total || 0);
-            }, 0) * 100
-        ) / 100;
+        const pickedSubtotal =
+            Math.round(
+                pickedItems.reduce((sum: number, item: any) => {
+                    return sum + Number(item.total || 0);
+                }, 0) * 100
+            ) / 100;
 
+        console.log("pickedItems:", pickedItems);
+        console.log("shortageGroups:", shortageGroups);
+
+        // ---------------------------------------------------------
+        // CURRENT VENDOR ORDER UPDATE
+        // ---------------------------------------------------------
         const currentOrderUpdateData: any = {
-            items: pickedItems,
-            subtotal: pickedSubtotal,
-            totalAmount: pickedSubtotal,
             discount: 0,
             gstAmount: 0,
             shippingCharge: 0,
+
             $push: {
                 trackingHistory: {
                     title: "Partial pickup completed",
-                    status: pickedItems.length > 0 ? "picked_up" : "cancelled",
+                    status:
+                        pickedItems.length > 0
+                            ? "picked_up"
+                            : "cancelled",
                     remark:
                         payload.remark ||
                         "Rider picked available quantity and reassigned shortage quantity to another seller.",
@@ -841,7 +896,19 @@ export class DriverOrderService {
             },
         };
 
+        // ---------------------------------------------------------
+        // IMPORTANT:
+        // Only set items/subtotal/totalAmount when current vendor
+        // still has at least one picked item.
+        //
+        // If pickedItems = [], we DON'T send items: [] because
+        // orderVendorItemSchema requires at least one item.
+        // ---------------------------------------------------------
         if (pickedItems.length > 0) {
+            currentOrderUpdateData.items = pickedItems;
+            currentOrderUpdateData.subtotal = pickedSubtotal;
+            currentOrderUpdateData.totalAmount = pickedSubtotal;
+
             currentOrderUpdateData.status = "shipped";
             currentOrderUpdateData.deliveryStatus = "picked_up";
             currentOrderUpdateData.sellerStatus = "handed_to_rider";
@@ -849,97 +916,141 @@ export class DriverOrderService {
             currentOrderUpdateData.shippedAt = now;
             currentOrderUpdateData.handedToRiderAt = now;
         } else {
+            // -----------------------------------------------------
+            // Seller has ZERO quantity.
+            //
+            // Do NOT update items to [].
+            // Just cancel/fail the current vendor order.
+            // -----------------------------------------------------
             currentOrderUpdateData.status = "cancelled";
             currentOrderUpdateData.sellerStatus = "cancelled";
             currentOrderUpdateData.deliveryStatus = "failed";
             currentOrderUpdateData.cancelledAt = now;
             currentOrderUpdateData.failureReason =
-                payload.remark || "Seller does not have available quantity.";
+                payload.remark ||
+                "Seller does not have available quantity.";
         }
 
-        const updatedCurrentOrder = await this.repo.updateDeliveryStatus(
-            orderId,
-            driverId,
-            currentOrderUpdateData
-        );
+        const updatedCurrentOrder =
+            await this.repo.updateDeliveryStatus(
+                orderId,
+                driverId,
+                currentOrderUpdateData
+            );
 
+        // ---------------------------------------------------------
+        // CREATE NEW VENDOR ORDERS FOR SHORTAGE
+        // ---------------------------------------------------------
         const createdVendorOrders: any[] = [];
         let newIndex = existingVendorOrderCount + 1;
 
-        for (const [newVendorId, shortageItems] of shortageGroups.entries()) {
-            const shortageSubtotal = Math.round(
-                shortageItems.reduce((sum: number, item: any) => {
-                    return sum + Number(item.total || 0);
-                }, 0) * 100
-            ) / 100;
+        for (const [
+            newVendorId,
+            shortageItems,
+        ] of shortageGroups.entries()) {
+            const shortageSubtotal =
+                Math.round(
+                    shortageItems.reduce(
+                        (sum: number, item: any) => {
+                            return sum + Number(item.total || 0);
+                        },
+                        0
+                    ) * 100
+                ) / 100;
 
             const vendorOrderNumber = `${currentOrder.orderNumber}-V${newIndex}`;
+
             const pickupOtp = generateOtp();
             const deliveryOtp = generateOtp();
-            const pickupQrCode = generatePickupQrCode(vendorOrderNumber);
 
-            const newVendorOrder = await OrderVendorModel.create({
-                parentOrder: currentOrder.parentOrder,
-                user: currentOrder.user,
-                vendor: newVendorId,
+            const pickupQrCode =
+                generatePickupQrCode(vendorOrderNumber);
 
-                orderNumber: currentOrder.orderNumber,
-                vendorOrderNumber,
+            const newVendorOrder =
+                await OrderVendorModel.create({
+                    parentOrder: currentOrder.parentOrder,
 
-                items: shortageItems,
+                    user: currentOrder.user,
 
-                billingAddress: currentOrder.billingAddress,
-                shippingAddress: currentOrder.shippingAddress,
+                    vendor: newVendorId,
 
-                paymentMethod: currentOrder.paymentMethod,
-                paymentTransaction: currentOrder.paymentTransaction,
+                    orderNumber: currentOrder.orderNumber,
 
-                subtotal: shortageSubtotal,
-                discount: 0,
-                gstAmount: 0,
-                shippingCharge: 0,
-                totalAmount: shortageSubtotal,
+                    vendorOrderNumber,
 
-                paymentStatus: currentOrder.paymentStatus,
-                paymentMode: currentOrder.paymentMode,
+                    items: shortageItems,
 
-                status: "placed",
-                sellerStatus: "pending_acceptance",
-                deliveryStatus: "not_assigned",
+                    billingAddress: currentOrder.billingAddress,
 
-                pickupVerification: {
-                    pickupOtp,
-                    pickupQrCode,
-                    otpVerified: false,
-                    qrVerified: false,
-                },
+                    shippingAddress: currentOrder.shippingAddress,
 
-                customerVerification: {
-                    deliveryOtp,
-                    otpVerified: false,
-                    signatureTaken: false,
-                },
+                    paymentMethod: currentOrder.paymentMethod,
 
-                trackingHistory: [
-                    {
-                        title: "Order reassigned to new seller",
-                        status: "placed",
-                        remark:
-                            payload.remark ||
-                            "Shortage quantity reassigned from previous seller.",
-                        updatedBy: driverId,
-                        updatedByRole: "driver",
-                        updatedAt: now,
+                    paymentTransaction:
+                        currentOrder.paymentTransaction,
+
+                    subtotal: shortageSubtotal,
+
+                    discount: 0,
+
+                    gstAmount: 0,
+
+                    shippingCharge: 0,
+
+                    totalAmount: shortageSubtotal,
+
+                    paymentStatus: currentOrder.paymentStatus,
+
+                    paymentMode: currentOrder.paymentMode,
+
+                    status: "placed",
+
+                    sellerStatus: "pending_acceptance",
+
+                    deliveryStatus: "not_assigned",
+
+                    pickupVerification: {
+                        pickupOtp,
+                        pickupQrCode,
+                        otpVerified: false,
+                        qrVerified: false,
                     },
-                ],
 
-                isActive: true,
-            });
+                    customerVerification: {
+                        deliveryOtp,
+                        otpVerified: false,
+                        signatureTaken: false,
+                    },
+
+                    trackingHistory: [
+                        {
+                            title: "Order reassigned to new seller",
+
+                            status: "placed",
+
+                            remark:
+                                payload.remark ||
+                                "Shortage quantity reassigned from previous seller.",
+
+                            updatedBy: driverId,
+
+                            updatedByRole: "driver",
+
+                            updatedAt: now,
+                        },
+                    ],
+
+                    isActive: true,
+                });
 
             createdVendorOrders.push(newVendorOrder);
+
             newIndex++;
         }
 
+        // ---------------------------------------------------------
+        // UPDATE PARENT ORDER
+        // ---------------------------------------------------------
         const parentItems: any[] = [];
 
         for (const parentItem of parentOrder.items || []) {
@@ -949,46 +1060,78 @@ export class DriverOrderService {
                     : { ...parentItem };
 
             const parentProductId = String(
-                plainParentItem.product?._id || plainParentItem.product || ""
+                plainParentItem.product?._id ||
+                plainParentItem.product ||
+                ""
             );
 
             const parentVariantId = plainParentItem.variant
-                ? String(plainParentItem.variant?._id || plainParentItem.variant)
+                ? String(
+                    plainParentItem.variant?._id ||
+                    plainParentItem.variant
+                )
                 : "";
 
             const splitInput = payload.items.find((item) => {
                 const inputProductId = String(item.product || "");
-                const inputVariantId = item.variant ? String(item.variant) : "";
+
+                const inputVariantId = item.variant
+                    ? String(item.variant)
+                    : "";
 
                 return (
                     inputProductId === parentProductId &&
                     inputVariantId === parentVariantId &&
-                    String(plainParentItem.vendor) === String(currentOrder.vendor)
+                    String(plainParentItem.vendor) ===
+                    String(currentOrder.vendor)
                 );
             });
 
+            // Item was not part of reassignment.
             if (!splitInput) {
                 parentItems.push(plainParentItem);
                 continue;
             }
 
-            const pickedQuantity = Number(splitInput.pickedQuantity || 0);
-            const shortQuantity = Number(splitInput.shortQuantity || 0);
+            const pickedQuantity = Number(
+                splitInput.pickedQuantity || 0
+            );
 
+            const shortQuantity = Number(
+                splitInput.shortQuantity || 0
+            );
+
+            // Current vendor gets picked quantity.
             if (pickedQuantity > 0) {
                 parentItems.push({
                     ...plainParentItem,
+
                     quantity: pickedQuantity,
-                    total: Math.round(Number(plainParentItem.price || 0) * pickedQuantity * 100) / 100,
+
+                    total:
+                        Math.round(
+                            Number(plainParentItem.price || 0) *
+                            pickedQuantity *
+                            100
+                        ) / 100,
                 });
             }
 
+            // New vendor gets shortage quantity.
             if (shortQuantity > 0) {
                 parentItems.push({
                     ...plainParentItem,
+
                     vendor: splitInput.newVendor,
+
                     quantity: shortQuantity,
-                    total: Math.round(Number(plainParentItem.price || 0) * shortQuantity * 100) / 100,
+
+                    total:
+                        Math.round(
+                            Number(plainParentItem.price || 0) *
+                            shortQuantity *
+                            100
+                        ) / 100,
                 });
             }
         }
@@ -996,22 +1139,34 @@ export class DriverOrderService {
         const vendorIds = [
             ...new Set(
                 parentItems
-                    .map((item: any) => String(item.vendor || ""))
+                    .map((item: any) =>
+                        String(item.vendor || "")
+                    )
                     .filter(Boolean)
             ),
         ];
 
-        const parentSubtotal = Math.round(
-            parentItems.reduce((sum: number, item: any) => {
-                return sum + Number(item.total || 0);
-            }, 0) * 100
-        ) / 100;
+        const parentSubtotal =
+            Math.round(
+                parentItems.reduce(
+                    (sum: number, item: any) => {
+                        return sum + Number(item.total || 0);
+                    },
+                    0
+                ) * 100
+            ) / 100;
 
         parentOrder.items = parentItems;
         parentOrder.vendors = vendorIds;
         parentOrder.vendorOrderCount = vendorIds.length;
-        parentOrder.orderType = vendorIds.length > 1 ? "multi_vendor" : "single_vendor";
-        parentOrder.vendor = vendorIds.length === 1 ? vendorIds[0] : undefined;
+        parentOrder.orderType =
+            vendorIds.length > 1
+                ? "multi_vendor"
+                : "single_vendor";
+        parentOrder.vendor =
+            vendorIds.length === 1
+                ? vendorIds[0]
+                : undefined;
         parentOrder.subtotal = parentSubtotal;
         parentOrder.totalAmount =
             parentSubtotal -

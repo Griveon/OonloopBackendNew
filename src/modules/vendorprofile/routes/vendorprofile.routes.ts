@@ -117,4 +117,29 @@ vendorProfileRoutes.put(
     controller.updateProfileImage
 );
 
+vendorProfileRoutes.post(
+    "/store-images",
+    authMiddleware,
+    upload.array("images", 10),
+    controller.uploadStoreImages
+);
+
+vendorProfileRoutes.put(
+    "/store-images",
+    authMiddleware,
+    controller.updateStoreImages
+);
+
+vendorProfileRoutes.delete(
+    "/store-images",
+    authMiddleware,
+    controller.removeStoreImage
+);
+
+vendorProfileRoutes.get(
+    "/store-images",
+    authMiddleware,
+    controller.getStoreImages
+);
+
 export default vendorProfileRoutes;

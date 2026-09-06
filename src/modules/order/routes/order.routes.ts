@@ -107,6 +107,12 @@ orderRoutes.put(
     vendorOrdersController.updateOrderStatus
 );
 
+orderRoutes.get(
+    "/admin/orders",
+    authMiddleware,
+    controller.getAdminOrders,
+);
+
 /**
  * Old vendor routes.
  */

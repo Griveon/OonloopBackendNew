@@ -8,6 +8,8 @@ import { VendorSubscriptionService } from "../../vendorsubscription/services/ven
 import { VendorProfileModel } from "../../vendorprofile/models/vendorprofile.model.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 import { FirebaseTokenService } from "../../notification/services/firebasetoken.service.js";
+import mongoose from "mongoose";
+import { CartModel } from "../../cart/models/cart.model.js";
 
 export class PaymentTransactionService {
     private repo: PaymentTransactionRepository;
@@ -480,6 +482,86 @@ export class PaymentTransactionService {
         };
     }
 
+    async removeOrderedItemsFromCart(
+        userId: string | mongoose.Types.ObjectId,
+        orderItems: any[]
+    ) {
+        if (!userId || !Array.isArray(orderItems) || orderItems.length === 0) {
+            return;
+        }
+
+        const conditions = orderItems
+            .filter((item) => item?.product)
+            .map((item) => {
+                const condition: any = {
+                    product: new mongoose.Types.ObjectId(
+                        item.product.toString()
+                    ),
+                };
+
+                // If the order item has a variant, match that exact variant.
+                if (item.variant) {
+                    condition.variant = new mongoose.Types.ObjectId(
+                        item.variant.toString()
+                    );
+                } else {
+                    // Product without variant
+                    condition.$or = [
+                        { variant: null },
+                        { variant: { $exists: false } },
+                    ];
+                }
+
+                return condition;
+            });
+
+        if (conditions.length === 0) {
+            return;
+        }
+
+        await CartModel.updateOne(
+            {
+                user: new mongoose.Types.ObjectId(userId.toString()),
+            },
+            {
+                $pull: {
+                    items: {
+                        $or: conditions,
+                    },
+                },
+            }
+        );
+
+        // Recalculate cart totals after removing purchased items.
+        const cart = await CartModel.findOne({
+            user: new mongoose.Types.ObjectId(userId.toString()),
+        });
+
+        if (!cart) {
+            return;
+        }
+
+        cart.totalItems = cart.items.reduce(
+            (sum, item) => sum + Number(item.quantity || 0),
+            0
+        );
+
+        cart.subTotal = cart.items.reduce(
+            (sum, item) =>
+                sum + Number(item.price || 0) * Number(item.quantity || 0),
+            0
+        );
+
+        cart.totalGST = cart.items.reduce(
+            (sum, item) => sum + Number(item.gstAmount || 0),
+            0
+        );
+
+        cart.grandTotal = cart.subTotal + cart.totalGST;
+
+        await cart.save();
+    }
+
     async verifyOrderPayment(data: any) {
         const {
             transactionId,
@@ -664,12 +746,14 @@ export class PaymentTransactionService {
             );
         }
 
-        // Update transaction first, then the parent/vendor orders.
-        // Repository methods should themselves use atomic MongoDB updates.
         await this.repo.markSuccess(transactionId, razorpay_payment_id);
         await this.repo.markOrderPaid(orderId, transactionId);
 
-        // Notifications must never decide whether payment verification succeeds.
+        await this.removeOrderedItemsFromCart(
+            userId,
+            order.items
+        );
+
         void Promise.allSettled([
             this.sendOrderPaidNotificationToVendors(orderId),
             this.sendOrderPaidNotificationToDrivers(orderId),

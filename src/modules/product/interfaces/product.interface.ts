@@ -10,6 +10,8 @@ export interface IProductVariant {
     sku?: string;
     price?: number;
     mrp?: number;
+    productSpecification?: any;
+    productHandlingCharges?: any;
 }
 export interface IProductVideo {
     productId?: Types.ObjectId;
@@ -75,6 +77,7 @@ export interface IProduct {
     slug: string;
     gst?: IGSTDetails;
     availability: any;
+    searchKeywords: any;
 }
 
 export type ProductAvailabilityType = "always" | "scheduled";

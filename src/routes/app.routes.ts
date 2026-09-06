@@ -37,6 +37,7 @@ import vendorAccountStatementRoutes from "../modules/vendoraccountstatements/rou
 import notificationRoutes from "../modules/notification/routes/notification.routes.js";
 import userReportRoutes from "../modules/usersreport/routes/userreport.routes.js";
 import personalShopperRoutes from "../modules/personalshopper/routes/personalshopper.routes.js";
+import userPreferenceRoutes from "../modules/userpreference/routes/userprefrence.routes.js";
 
 userAuthRoutes
 
@@ -107,6 +108,8 @@ router.use("/customerorder", orderRoutes);
 
 router.use("/vendororder", orderRoutes);
 
+router.use("/adminorders", orderRoutes);
+
 router.use("/productcontainer", productContainerRoutes);
 
 router.use("/productview", productViewRoutes);
@@ -117,9 +120,13 @@ router.use("/driverprofile", driverProfileRoutes);
 
 router.use("/driverorders", orderRoutes);
 
+router.use("/userpreference", userPreferenceRoutes);
+
 router.use("/firebasetokens", firebaseTokenRoutes);
 
 router.use("/notifications", notificationRoutes);
+
+router.use("/testnotifications", firebaseTokenRoutes);
 
 router.use("/vendoraccountstatements", vendorAccountStatementRoutes);
 

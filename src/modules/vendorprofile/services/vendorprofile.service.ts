@@ -4,6 +4,7 @@ import type { IVendorDocument } from "../interfaces/vendorprofile.interface.js";
 import { VendorProfileRepository } from "../repository/vendorprofile.repository.js";
 import { UserRepository } from "../../user/repositories/user.repository.js";
 import { uploadVendorProfileImageToR2 } from "../utils/uploadVendorProfileImageToR2.js";
+import { deleteVendorAssetFromR2, uploadVendorStoreImageToR2 } from "../utils/uploadVendorStoreImageToR2.js";
 
 export class VendorProfileService {
     private vendorRepo: VendorProfileRepository;
@@ -142,9 +143,94 @@ export class VendorProfileService {
     }
 
     async updateProfileImage(userId: string, file: Express.Multer.File) {
+        console.log("USER COMES", userId, file)
         const image = await uploadVendorProfileImageToR2(file, userId);
 
         return await this.vendorRepo.updateStoreLogo(userId, image);
     }
 
+
+    async uploadStoreImages(
+        userId: string,
+        files: Express.Multer.File[]
+    ) {
+        const vendor = await this.vendorRepo.getVendorByUserId(userId);
+
+        if (!vendor) {
+            throw new Error("Vendor not found");
+        }
+
+        const existingImages = vendor.storeImages ?? [];
+
+        const uploadedImages = [];
+
+        for (let i = 0; i < files.length; i++) {
+            const url = await uploadVendorStoreImageToR2(
+                files[i]!,
+                userId
+            );
+
+            uploadedImages.push({
+                url,
+                name: files[i]!.originalname,
+                alt: "",
+                isPrimary: existingImages.length === 0 && i === 0,
+                position: existingImages.length + i,
+            });
+        }
+
+        return await this.vendorRepo.addStoreImages(
+            userId,
+            uploadedImages
+        );
+    }
+
+    async updateStoreImages(
+        userId: string,
+        images: any[]
+    ) {
+        const vendor = await this.vendorRepo.getVendorByUserId(userId);
+
+        if (!vendor) {
+            throw new Error("Vendor not found");
+        }
+
+        return await this.vendorRepo.updateStoreImages(
+            userId,
+            images
+        );
+    }
+
+    async removeStoreImage(
+        userId: string,
+        imageId: any
+    ) {
+        const vendor = await this.vendorRepo.getVendorByUserId(userId);
+
+        if (!vendor) {
+            throw new Error("Vendor not found");
+        }
+
+        const images = vendor.storeImages ?? [];
+
+        const image = images.find(
+            (img: any) => img.url?.toString() === imageId
+        );
+
+        if (!image) {
+            throw new Error("Image not found");
+        }
+
+        await deleteVendorAssetFromR2(image.url);
+
+        vendor.storeImages = images.filter(
+            (img: any) => img.url?.toString() !== imageId
+        );
+
+        return await vendor.save();
+    }
+
+    async getStoreImages(userId: string) {
+        return await this.vendorRepo.getStoreImages(userId);
+    }
 }

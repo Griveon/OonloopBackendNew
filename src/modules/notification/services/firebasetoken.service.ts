@@ -13,6 +13,8 @@ import {
 } from "../utils/firebasepush.util.js";
 
 import { UserModel } from "../../user/models/user.model.js";
+import { UserPreferenceModel } from "../../userpreference/models/userpreference.model.js";
+import { USER_PREFERENCES } from "../../userpreference/constants/userpreference.constants.js";
 
 export class FirebaseTokenService {
     private firebaseTokenRepository: FirebaseTokenRepository;
@@ -97,10 +99,45 @@ export class FirebaseTokenService {
             throw new Error("Notification body is required");
         }
 
+        const user = await UserModel.findById(data.userId).select("role roles");
+
+        if (user) {
+            const isVendor =
+                user.role === "vendor" ||
+                (Array.isArray(user.roles) && user.roles.includes("vendor"));
+
+            if (isVendor) {
+                const preferenceKey =
+                    typeof USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS === "object"
+                        ? USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS.key
+                        : USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS;
+
+                const userPref = await UserPreferenceModel.findOne({ user: data.userId });
+
+                if (userPref && userPref.values) {
+                    const prefValue =
+                        userPref.values instanceof Map
+                            ? userPref.values.get(preferenceKey)
+                            : userPref.values[preferenceKey];
+
+                    if (prefValue === false) {
+                        return {
+                            success: false,
+                            message:
+                                "Notification skipped: Vendor has disabled order notifications in preferences",
+                            result: null,
+                        };
+                    }
+                }
+            }
+        }
+
         const tokenDocs =
             await this.firebaseTokenRepository.findActiveTokensByUserId(
                 data.userId
             );
+
+        console.log(data.userId);
 
         const tokens = [
             ...new Set(
@@ -118,8 +155,7 @@ export class FirebaseTokenService {
             };
         }
 
-        const result =
-            await sendFirebaseNotificationToMultipleTokens({
+        const result = await sendFirebaseNotificationToMultipleTokens({
                 tokens,
                 title: data.title,
                 body: data.body,
@@ -308,9 +344,61 @@ export class FirebaseTokenService {
             };
         }
 
+        const eligibleUserIds: string[] = [];
+
+        let targetPrefKey: string | null = null;
+
+        if (role === "vendor") {
+            targetPrefKey =
+                typeof USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS === "object"
+                    ? USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS.key
+                    : USER_PREFERENCES.VENDOR_ORDER_NOTIFICATIONS;
+        } else if (role === "driver") {
+            targetPrefKey =
+                typeof USER_PREFERENCES.DRIVER_ORDER_NOTIFICATIONS === "object"
+                    ? USER_PREFERENCES.DRIVER_ORDER_NOTIFICATIONS.key
+                    : USER_PREFERENCES.DRIVER_ORDER_NOTIFICATIONS;
+        }
+
+        if (targetPrefKey) {
+            const preferencesDocs = await UserPreferenceModel.find({
+                user: { $in: userIds },
+            });
+
+            const prefMap = new Map<string, any>();
+            for (const doc of preferencesDocs) {
+                const userIdStr = doc.user.toString();
+                const prefVal =
+                    doc.values instanceof Map
+                        ? doc.values.get(targetPrefKey)
+                        : (doc.values as Record<string, any>)?.[targetPrefKey];
+
+                prefMap.set(userIdStr, prefVal);
+            }
+
+            for (const userId of userIds) {
+                const hasDisabled = prefMap.get(userId) === false;
+                if (!hasDisabled) {
+                    eligibleUserIds.push(userId);
+                }
+            }
+        } else {
+            eligibleUserIds.push(...userIds);
+        }
+
+        if (!eligibleUserIds.length) {
+            return {
+                success: false,
+                message: `All users with role "${role}" have disabled order notifications in preferences`,
+                totalUsers: userIds.length,
+                totalTokens: 0,
+                result: null,
+            };
+        }
+
         const allTokens: string[] = [];
 
-        for (const userId of userIds) {
+        for (const userId of eligibleUserIds) {
             const tokenDocs =
                 await this.firebaseTokenRepository.findActiveTokensByUserId(
                     userId
@@ -335,7 +423,7 @@ export class FirebaseTokenService {
             return {
                 success: false,
                 message: `No active Firebase tokens found for role: ${role}`,
-                totalUsers: userIds.length,
+                totalUsers: eligibleUserIds.length,
                 totalTokens: 0,
                 result: null,
             };
@@ -365,16 +453,33 @@ export class FirebaseTokenService {
 
             const result = await getMessaging().sendEachForMulticast({
                 tokens,
+
+                notification: {
+                    title,
+                    body,
+                },
+
                 data: notificationData,
+
                 android: {
                     priority: "high",
+                    notification: {
+                        channelId: "new_paid_orders_v1",
+                        sound: "order_alert",
+                    },
                 },
+
                 apns: {
                     headers: {
-                        "apns-priority": "5",
+                        "apns-priority": "10",
                     },
                     payload: {
                         aps: {
+                            alert: {
+                                title,
+                                body,
+                            },
+                            sound: "order_alert.wav",
                             contentAvailable: true,
                         },
                     },
@@ -389,7 +494,7 @@ export class FirebaseTokenService {
         return {
             success: successCount > 0,
             message: "Data notification processing completed",
-            totalUsers: userIds.length,
+            totalUsers: eligibleUserIds.length,
             totalTokens: uniqueTokens.length,
             successCount,
             failureCount,

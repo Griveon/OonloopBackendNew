@@ -125,4 +125,65 @@ export class VendorProfileRepository {
             }
         );
     }
+
+    async getVendorByUserId(userId: string) {
+        return VendorProfileModel.findOne({ user: userId });
+    }
+
+    async updateStoreImages(
+        userId: string,
+        images: any[]
+    ) {
+        return VendorProfileModel.findOneAndUpdate(
+            { user: userId },
+            {
+                $set: {
+                    storeImages: images,
+                },
+            },
+            {
+                new: true,
+            }
+        );
+    }
+
+    async addStoreImages(
+        userId: string,
+        images: any[]
+    ) {
+        return VendorProfileModel.findOneAndUpdate(
+            { user: userId },
+            {
+                $push: {
+                    storeImages: {
+                        $each: images,
+                    },
+                },
+            },
+            {
+                new: true,
+            }
+        );
+    }
+
+    async getStoreImages(userId: string) {
+        const vendor = await VendorProfileModel.findOne(
+            { user: userId },
+            {
+                storeImages: 1,
+                storeLogo: 1,
+                storeName: 1,
+            }
+        );
+
+        if (!vendor) {
+            throw new Error("Vendor not found");
+        }
+
+        return {
+            storeLogo: vendor.storeLogo,
+            storeName: vendor.storeName,
+            storeImages: vendor.storeImages ?? [],
+        };
+    }
 }

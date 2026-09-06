@@ -85,7 +85,8 @@ export class ProductService {
                 sku: v.sku,
                 price: Number(v.price || 0),
                 mrp: Number(v.mrp || 0),
-
+                productSpecification: v.productSpecification,
+                productHandlingCharges: v.productHandlingCharges,
                 // Images handled by upload API
                 images: [],
             }))
@@ -183,6 +184,8 @@ export class ProductService {
 
         const updatePayload: any = { ...data };
 
+        console.log(updatePayload)
+
         if (data.availability) {
             updatePayload.availability = this.normalizeAvailability(data);
         }
@@ -268,6 +271,8 @@ export class ProductService {
                 unit: v.unit,
                 unitValue: Number(v.unitValue || 0),
                 stock: Number(v.stock || 0),
+                productSpecification: v.productSpecification,
+                productHandlingCharges: v.productHandlingCharges,
                 sku: v.sku,
                 price: Number(v.price || 0),
                 mrp: Number(v.mrp || 0),

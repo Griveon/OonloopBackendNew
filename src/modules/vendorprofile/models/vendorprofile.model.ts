@@ -144,11 +144,7 @@ const VendorSchema: Schema<IVendorDocument> = new Schema(
             type: String,
             trim: true,
             unique: true,
-            sparse: true,
-            match: [
-                /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/,
-                "Invalid GST number",
-            ],
+            sparse: true
         },
 
         panNumber: {

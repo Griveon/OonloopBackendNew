@@ -121,24 +121,50 @@ export const sendFirebaseNotificationToMultipleTokens = async ({
         };
     }
 
+    const notificationType = data?.type;
+
+    const isDriverOrder =
+        notificationType === "DRIVER_NEW_PAID_ORDER";
+
+    const sound = isDriverOrder
+        ? "order_alert"
+        : "default";
+
+    const channelId = isDriverOrder
+        ? "new_paid_orders_v1"
+        : "default";
+
     const message: MulticastMessage = {
         tokens,
+
         notification: {
             title,
             body,
         },
+
         data: normalizeData(data),
+
         android: {
             priority: "high",
+
             notification: {
-                sound: "default",
-                channelId: "default",
+                sound,
+                channelId,
             },
         },
+
         apns: {
+            headers: {
+                "apns-priority": "10",
+            },
+
             payload: {
                 aps: {
-                    sound: "default",
+                    alert: {
+                        title,
+                        body,
+                    },
+                    sound: sound,
                 },
             },
         },

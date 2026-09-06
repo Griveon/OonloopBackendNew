@@ -3,6 +3,17 @@ import { OrderRepository } from "../repository/order.repository.js";
 import { generateOrderNumber } from "../utils/ordernumbergenerate.util.js";
 import type { OrderStatus } from "../interfaces/order.interface.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
+import { Types } from "mongoose";
+import {
+    AdminOrdersRepository,
+} from "../repository/adminorders.repository.js";
+
+import type {
+    AdminOrderSortBy,
+    AdminOrderSortOrder,
+    IAdminOrderFilters,
+    IAdminOrdersResult,
+} from "../interfaces/adminorders.interface.js";
 
 const round = (num: number) => Math.round(Number(num || 0) * 100) / 100;
 
@@ -125,6 +136,7 @@ const normalizeOrderAddress = (address: any) => {
 
 export class OrderService {
     private repo = new OrderRepository();
+    private adminOrdersRepository = new AdminOrdersRepository();
 
     async create(data: any) {
         if (!data) {
@@ -816,5 +828,1019 @@ export class OrderService {
 
         delete data.cancellationReasonFromVendor;
         delete data.failureReasonFromDriver;
+    }
+
+    async getAdminOrders(
+        query:
+            Record<string, unknown>,
+    ): Promise<IAdminOrdersResult> {
+
+        const filters =
+            this.buildAdminOrderFilters(
+                query,
+            );
+
+
+        const result =
+            await this.adminOrdersRepository
+                .findAll(
+                    filters,
+                );
+
+
+        const totalPages =
+            result.total > 0
+                ? Math.ceil(
+                    result.total /
+                    filters.limit,
+                )
+                : 0;
+
+
+        return {
+            orders:
+                result.orders,
+
+            pagination: {
+                page:
+                    filters.page,
+
+                limit:
+                    filters.limit,
+
+                total:
+                    result.total,
+
+                totalPages,
+
+                hasNextPage:
+                    filters.page <
+                    totalPages,
+
+                hasPreviousPage:
+                    filters.page >
+                    1,
+            },
+
+            summary:
+                result.summary,
+        };
+    }
+
+
+    async getAdminOrderById(
+        orderId:
+            any,
+    ) {
+        if (
+            !orderId
+            ||
+            !Types.ObjectId.isValid(
+                orderId,
+            )
+        ) {
+            throw new Error(
+                "Invalid order id",
+            );
+        }
+
+
+        const order =
+            await this.adminOrdersRepository
+                .findById(
+                    orderId,
+                );
+
+
+        if (!order) {
+            throw new Error(
+                "Order not found",
+            );
+        }
+
+
+        return order;
+    }
+
+    private buildAdminOrderFilters(
+        query:
+            Record<string, unknown>,
+    ): IAdminOrderFilters {
+
+        const page =
+            this.parseAdminPositiveInteger(
+                query.page,
+                1,
+            );
+
+
+        const requestedLimit =
+            this.parseAdminPositiveInteger(
+                query.limit,
+                20,
+            );
+
+
+        /**
+         * Admin order records contain
+         * parent + vendorOrders[], so keep
+         * maximum page size controlled.
+         */
+        const limit =
+            Math.min(
+                requestedLimit,
+                100,
+            );
+
+
+        const search =
+            this.getAdminOptionalString(
+                query.search,
+            );
+
+
+        /**
+         * ========================================================
+         * PARENT ORDER FILTERS
+         * ========================================================
+         */
+
+        const status =
+            this.validateAdminMultipleValues(
+                query.status,
+
+                [
+                    "pending",
+                    "placed",
+                    "processing",
+                    "partially_ready",
+                    "ready_for_pickup",
+                    "partially_shipped",
+                    "shipped",
+                    "partially_delivered",
+                    "delivered",
+                    "partially_cancelled",
+                    "cancelled",
+                    "returned",
+                ],
+
+                "order status",
+            );
+
+
+        const paymentStatus =
+            this.validateAdminMultipleValues(
+                query.paymentStatus,
+
+                [
+                    "pending",
+                    "success",
+                    "failed",
+                    "refunded",
+                ],
+
+                "payment status",
+            );
+
+
+        const paymentMode =
+            this.validateAdminMultipleValues(
+                query.paymentMode,
+
+                [
+                    "cod",
+                    "online",
+                ],
+
+                "payment mode",
+            );
+
+
+        const orderType =
+            this.validateAdminMultipleValues(
+                query.orderType,
+
+                [
+                    "single_vendor",
+                    "multi_vendor",
+                ],
+
+                "order type",
+            );
+
+
+        /**
+         * ========================================================
+         * VENDOR ORDER FILTERS
+         * ========================================================
+         */
+
+        const vendorOrderStatus =
+            this.validateAdminMultipleValues(
+                query.vendorOrderStatus,
+
+                [
+                    "pending",
+                    "placed",
+                    "seller_accepted",
+                    "picking_products",
+                    "packing_order",
+                    "ready_for_pickup",
+                    "shipped",
+                    "delivered",
+                    "cancelled",
+                    "returned",
+                ],
+
+                "vendor order status",
+            );
+
+
+        const sellerStatus =
+            this.validateAdminMultipleValues(
+                query.sellerStatus,
+
+                [
+                    "pending_acceptance",
+                    "accepted",
+                    "picking_products",
+                    "packing_order",
+                    "ready_for_pickup",
+                    "handed_to_rider",
+                    "cancelled",
+                ],
+
+                "seller status",
+            );
+
+
+        const deliveryStatus =
+            this.validateAdminMultipleValues(
+                query.deliveryStatus,
+
+                [
+                    "not_assigned",
+                    "assigned",
+                    "delivery_accepted",
+                    "proceeding_to_store",
+                    "reached_store",
+                    "waiting_for_packing",
+                    "pickup_verification_pending",
+                    "pickup_verified",
+                    "picked_up",
+                    "out_for_delivery",
+                    "reached_customer",
+                    "customer_verification_pending",
+                    "delivered",
+                    "failed",
+                    "returned",
+                ],
+
+                "delivery status",
+            );
+
+
+        const vendorPaymentStatus =
+            this.validateAdminMultipleValues(
+                query.vendorPaymentStatus,
+
+                [
+                    "pending",
+                    "success",
+                    "failed",
+                    "refunded",
+                ],
+
+                "vendor payment status",
+            );
+
+
+        /**
+         * ========================================================
+         * IDS
+         * ========================================================
+         */
+
+        const userId =
+            this.validateAdminObjectId(
+                query.userId,
+                "userId",
+            );
+
+
+        const vendorId =
+            this.validateAdminObjectId(
+                query.vendorId,
+                "vendorId",
+            );
+
+
+        const driverId =
+            this.validateAdminObjectId(
+                query.driverId,
+                "driverId",
+            );
+
+
+        const paymentMethodId =
+            this.validateAdminObjectId(
+                query.paymentMethodId,
+                "paymentMethodId",
+            );
+
+
+        const paymentTransactionId =
+            this.validateAdminObjectId(
+                query.paymentTransactionId,
+                "paymentTransactionId",
+            );
+
+
+        /**
+         * ========================================================
+         * AMOUNT
+         * ========================================================
+         */
+
+        const minAmount =
+            this.parseAdminAmount(
+                query.minAmount,
+                "minAmount",
+            );
+
+
+        const maxAmount =
+            this.parseAdminAmount(
+                query.maxAmount,
+                "maxAmount",
+            );
+
+
+        if (
+            minAmount !==
+            undefined
+            &&
+            maxAmount !==
+            undefined
+            &&
+            minAmount >
+            maxAmount
+        ) {
+            throw new Error(
+                "minAmount cannot be greater than maxAmount",
+            );
+        }
+
+
+        /**
+         * ========================================================
+         * DATE
+         * ========================================================
+         */
+
+        const fromDate =
+            this.parseAdminDate(
+                query.fromDate,
+                false,
+            );
+
+
+        const toDate =
+            this.parseAdminDate(
+                query.toDate,
+                true,
+            );
+
+
+        if (
+            fromDate
+            &&
+            toDate
+            &&
+            fromDate.getTime() >
+            toDate.getTime()
+        ) {
+            throw new Error(
+                "fromDate cannot be after toDate",
+            );
+        }
+
+
+        /**
+         * ========================================================
+         * BOOLEAN FILTERS
+         * ========================================================
+         */
+
+        const isActive =
+            this.parseAdminBoolean(
+                query.isActive,
+                "isActive",
+            );
+
+
+        const vendorOrderIsActive =
+            this.parseAdminBoolean(
+                query.vendorOrderIsActive,
+                "vendorOrderIsActive",
+            );
+
+
+        const hasDriver =
+            this.parseAdminBoolean(
+                query.hasDriver,
+                "hasDriver",
+            );
+
+
+        const liveTracking =
+            this.parseAdminBoolean(
+                query.liveTracking,
+                "liveTracking",
+            );
+
+
+        /**
+         * ========================================================
+         * SORT
+         * ========================================================
+         */
+
+        const sortBy =
+            this.parseAdminSortBy(
+                query.sortBy,
+            );
+
+
+        const sortOrder =
+            this.parseAdminSortOrder(
+                query.sortOrder,
+            );
+
+
+        return {
+            ...(search
+                ? {
+                    search,
+                }
+                : {}),
+
+
+            ...(status
+                ? {
+                    status,
+                }
+                : {}),
+
+
+            ...(paymentStatus
+                ? {
+                    paymentStatus,
+                }
+                : {}),
+
+
+            ...(paymentMode
+                ? {
+                    paymentMode,
+                }
+                : {}),
+
+
+            ...(orderType
+                ? {
+                    orderType,
+                }
+                : {}),
+
+
+            ...(userId
+                ? {
+                    userId,
+                }
+                : {}),
+
+
+            ...(vendorId
+                ? {
+                    vendorId,
+                }
+                : {}),
+
+
+            ...(driverId
+                ? {
+                    driverId,
+                }
+                : {}),
+
+
+            ...(paymentMethodId
+                ? {
+                    paymentMethodId,
+                }
+                : {}),
+
+
+            ...(paymentTransactionId
+                ? {
+                    paymentTransactionId,
+                }
+                : {}),
+
+
+            ...(vendorOrderStatus
+                ? {
+                    vendorOrderStatus,
+                }
+                : {}),
+
+
+            ...(sellerStatus
+                ? {
+                    sellerStatus,
+                }
+                : {}),
+
+
+            ...(deliveryStatus
+                ? {
+                    deliveryStatus,
+                }
+                : {}),
+
+
+            ...(vendorPaymentStatus
+                ? {
+                    vendorPaymentStatus,
+                }
+                : {}),
+
+
+            ...(minAmount !==
+                undefined
+                ? {
+                    minAmount,
+                }
+                : {}),
+
+
+            ...(maxAmount !==
+                undefined
+                ? {
+                    maxAmount,
+                }
+                : {}),
+
+
+            ...(fromDate
+                ? {
+                    fromDate,
+                }
+                : {}),
+
+
+            ...(toDate
+                ? {
+                    toDate,
+                }
+                : {}),
+
+
+            ...(isActive !==
+                undefined
+                ? {
+                    isActive,
+                }
+                : {}),
+
+
+            ...(vendorOrderIsActive !==
+                undefined
+                ? {
+                    vendorOrderIsActive,
+                }
+                : {}),
+
+
+            ...(hasDriver !==
+                undefined
+                ? {
+                    hasDriver,
+                }
+                : {}),
+
+
+            ...(liveTracking !==
+                undefined
+                ? {
+                    liveTracking,
+                }
+                : {}),
+
+
+            page,
+
+            limit,
+
+            sortBy,
+
+            sortOrder,
+        };
+    }
+
+
+    private getAdminOptionalString(
+        value:
+            unknown,
+    ): string | undefined {
+
+        if (
+            value ===
+            undefined
+            ||
+            value ===
+            null
+        ) {
+            return undefined;
+        }
+
+
+        const normalized =
+            String(
+                value,
+            )
+                .trim();
+
+
+        return normalized
+            || undefined;
+    }
+
+
+    private parseAdminPositiveInteger(
+        value:
+            unknown,
+
+        fallback:
+            number,
+    ): number {
+
+        if (
+            value ===
+            undefined
+            ||
+            value ===
+            null
+            ||
+            value ===
+            ""
+        ) {
+            return fallback;
+        }
+
+
+        const parsed =
+            Number(
+                value,
+            );
+
+
+        if (
+            !Number.isInteger(
+                parsed,
+            )
+            ||
+            parsed <=
+            0
+        ) {
+            return fallback;
+        }
+
+
+        return parsed;
+    }
+
+
+    private parseAdminAmount(
+        value:
+            unknown,
+
+        fieldName:
+            string,
+    ): number | undefined {
+
+        if (
+            value ===
+            undefined
+            ||
+            value ===
+            null
+            ||
+            value ===
+            ""
+        ) {
+            return undefined;
+        }
+
+
+        const amount =
+            Number(
+                value,
+            );
+
+
+        if (
+            !Number.isFinite(
+                amount,
+            )
+            ||
+            amount <
+            0
+        ) {
+            throw new Error(
+                `${fieldName} must be a valid non-negative number`,
+            );
+        }
+
+
+        return amount;
+    }
+
+
+    private parseAdminBoolean(
+        value:
+            unknown,
+
+        fieldName:
+            string,
+    ): boolean | undefined {
+
+        if (
+            value ===
+            undefined
+            ||
+            value ===
+            null
+            ||
+            value ===
+            ""
+        ) {
+            return undefined;
+        }
+
+
+        const normalized =
+            String(
+                value,
+            )
+                .trim()
+                .toLowerCase();
+
+
+        if (
+            normalized ===
+            "true"
+        ) {
+            return true;
+        }
+
+
+        if (
+            normalized ===
+            "false"
+        ) {
+            return false;
+        }
+
+
+        throw new Error(
+            `${fieldName} must be true or false`,
+        );
+    }
+
+
+    private parseAdminDate(
+        value:
+            unknown,
+
+        endOfDay:
+            boolean,
+    ): Date | undefined {
+
+        if (
+            value ===
+            undefined
+            ||
+            value ===
+            null
+            ||
+            value ===
+            ""
+        ) {
+            return undefined;
+        }
+
+
+        const raw =
+            String(
+                value,
+            )
+                .trim();
+
+
+        const isDateOnly =
+            /^\d{4}-\d{2}-\d{2}$/
+                .test(
+                    raw,
+                );
+
+
+        const date =
+            isDateOnly
+                ? new Date(
+                    `${raw}T${endOfDay
+                        ? "23:59:59.999"
+                        : "00:00:00.000"
+                    }`,
+                )
+
+                : new Date(
+                    raw,
+                );
+
+
+        if (
+            Number.isNaN(
+                date.getTime(),
+            )
+        ) {
+            throw new Error(
+                `Invalid date: ${raw}`,
+            );
+        }
+
+
+        return date;
+    }
+
+
+    private validateAdminObjectId(
+        value:
+            unknown,
+
+        fieldName:
+            string,
+    ): string | undefined {
+
+        const normalized =
+            this.getAdminOptionalString(
+                value,
+            );
+
+
+        if (
+            !normalized
+        ) {
+            return undefined;
+        }
+
+
+        if (
+            !Types.ObjectId.isValid(
+                normalized,
+            )
+        ) {
+            throw new Error(
+                `${fieldName} is invalid`,
+            );
+        }
+
+
+        return normalized;
+    }
+
+
+    private validateAdminMultipleValues(
+        value:
+            unknown,
+
+        allowedValues:
+            readonly string[],
+
+        fieldName:
+            string,
+    ): string | undefined {
+
+        const normalized =
+            this.getAdminOptionalString(
+                value,
+            );
+
+
+        if (
+            !normalized
+        ) {
+            return undefined;
+        }
+
+
+        const values =
+            normalized
+                .split(
+                    ",",
+                )
+
+                .map(
+                    item =>
+                        item
+                            .trim()
+                            .toLowerCase(),
+                )
+
+                .filter(
+                    Boolean,
+                );
+
+
+        const invalid =
+            values.filter(
+                item =>
+                    !allowedValues.includes(
+                        item,
+                    ),
+            );
+
+
+        if (
+            invalid.length >
+            0
+        ) {
+            throw new Error(
+                `Invalid ${fieldName}: ${invalid.join(", ")}`,
+            );
+        }
+
+
+        return values.join(
+            ",",
+        );
+    }
+
+
+    private parseAdminSortBy(
+        value:
+            unknown,
+    ): AdminOrderSortBy {
+
+        const allowed:
+            AdminOrderSortBy[] = [
+                "createdAt",
+                "updatedAt",
+                "totalAmount",
+                "subtotal",
+                "orderNumber",
+                "status",
+                "paymentStatus",
+            ];
+
+
+        const normalized =
+            this.getAdminOptionalString(
+                value,
+            ) as
+            AdminOrderSortBy
+            | undefined;
+
+
+        if (
+            normalized
+            &&
+            allowed.includes(
+                normalized,
+            )
+        ) {
+            return normalized;
+        }
+
+
+        return "createdAt";
+    }
+
+
+    private parseAdminSortOrder(
+        value:
+            unknown,
+    ): AdminOrderSortOrder {
+
+        return this
+            .getAdminOptionalString(
+                value,
+            )
+            ?.toLowerCase() ===
+            "asc"
+
+            ? "asc"
+            : "desc";
     }
 }

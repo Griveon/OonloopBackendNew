@@ -50,6 +50,16 @@ const variantSchema = new Schema<IProductVariant>(
         sku: { type: String },
         price: { type: Number },
         mrp: { type: Number },
+        productHandlingCharges: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        productSpecification: {
+            type: String,
+            default: "",
+            trim: true,
+        },
     },
     { _id: true }
 );
@@ -109,6 +119,11 @@ const productSchema = new Schema<IProduct>(
         minQty: { type: Number, default: 1 },
         slug: { type: String, required: true, unique: true },
         gst: gstSchema,
+        searchKeywords: {
+            type: [String],
+            default: [],
+            index: true,
+        },
         availability: {
             type: availabilitySchema,
             default: () => ({
@@ -137,6 +152,24 @@ productSchema.index({
     name: "text",
     description: "text",
     slug: "text",
+    searchKeywords: "text",
+});
+productSchema.index({
+    isActive: 1,
+    isMainCatalogProduct: 1,
 });
 
+productSchema.index({
+    category: 1,
+    isActive: 1,
+});
+
+productSchema.index({
+    productCategory: 1,
+    isActive: 1,
+});
+
+productSchema.index({
+    searchKeywords: 1,
+});
 export const ProductModel: Model<IProduct> = mongoose.model<IProduct>("Product", productSchema);

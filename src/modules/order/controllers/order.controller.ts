@@ -1,4 +1,4 @@
-import type { Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { OrderService } from "../services/order.service.js";
 import { ResponseUtil } from "../../../utils/response.util.js";
 
@@ -150,5 +150,92 @@ export class OrderController {
                 .json(ResponseUtil.notFound(error.message));
         }
     };
-    
+    getAdminOrders = async (
+        req:
+            Request,
+
+        res:
+            Response,
+
+        next:
+            NextFunction,
+    ) => {
+        try {
+            const result =
+                await this.service
+                    .getAdminOrders(
+                        req.query as
+                        Record<
+                            string,
+                            unknown
+                        >,
+                    );
+
+
+            return res
+                .status(
+                    200,
+                )
+                .json({
+                    success:
+                        true,
+
+                    message:
+                        "Admin orders fetched successfully",
+
+                    data:
+                        result,
+                });
+
+        } catch (error) {
+            next(
+                error,
+            );
+        }
+    };
+
+
+    getAdminOrderById = async (
+        req:
+            Request,
+
+        res:
+            Response,
+
+        next:
+            NextFunction,
+    ) => {
+        try {
+            const orderId =
+                req.params.id;
+
+
+            const order =
+                await this.service
+                    .getAdminOrderById(
+                        orderId,
+                    );
+
+
+            return res
+                .status(
+                    200,
+                )
+                .json({
+                    success:
+                        true,
+
+                    message:
+                        "Admin order fetched successfully",
+
+                    data:
+                        order,
+                });
+
+        } catch (error) {
+            next(
+                error,
+            );
+        }
+    };
 }

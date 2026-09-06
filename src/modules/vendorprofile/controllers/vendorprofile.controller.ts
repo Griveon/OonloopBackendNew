@@ -228,7 +228,7 @@ export class VendorProfileController {
         }
     };
 
-    async updateProfileImage(req: Request, res: Response) {
+    updateProfileImage = async (req: Request, res: Response) => {
         try {
             const userId = (req as any).user.id;
 
@@ -255,5 +255,118 @@ export class VendorProfileController {
                 message: error.message,
             });
         }
-    }
+    };
+
+    uploadStoreImages = async (
+        req: Request,
+        res: Response
+    ) => {
+        try {
+            const userId = (req as any).user.id;
+
+            const files = req.files as Express.Multer.File[];
+
+            if (!files?.length) {
+                return res.status(400).json(
+                    ResponseUtil.badRequest(
+                        "Store images are required"
+                    )
+                );
+            }
+
+            const vendor =
+                await this.vendorService.uploadStoreImages(
+                    userId,
+                    files
+                );
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Store images uploaded successfully",
+                    vendor
+                )
+            );
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
+
+    updateStoreImages = async (
+        req: Request,
+        res: Response
+    ) => {
+        try {
+            const userId = (req as any).user.id;
+
+            const vendor =
+                await this.vendorService.updateStoreImages(
+                    userId,
+                    req.body.storeImages
+                );
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Store images updated successfully",
+                    vendor
+                )
+            );
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
+
+    removeStoreImage = async (
+        req: Request,
+        res: Response
+    ) => {
+        try {
+            const userId = (req as any).user.id;
+
+            const { imageUrl } = req.body;
+            console.log(imageUrl)
+            const vendor =
+                await this.vendorService.removeStoreImage(
+                    userId,
+                    imageUrl
+                );
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Store image removed successfully",
+                    vendor
+                )
+            );
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
+
+    getStoreImages = async (
+        req: Request,
+        res: Response
+    ) => {
+        try {
+            const userId = (req as any).user.id;
+
+            const images =
+                await this.vendorService.getStoreImages(userId);
+
+            return res.status(200).json(
+                ResponseUtil.success(
+                    "Store images fetched successfully",
+                    images
+                )
+            );
+        } catch (error: any) {
+            return res.status(400).json(
+                ResponseUtil.badRequest(error.message)
+            );
+        }
+    };
 }

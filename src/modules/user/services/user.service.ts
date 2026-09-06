@@ -451,13 +451,13 @@ export class UserService {
                 user._id.toString()
             );
 
-        if (!driverProfile) {
-            throw new Error(
-                "Driver profile not found. Please complete driver registration first"
-            );
-        }
+        // if (!driverProfile) {
+        //     throw new Error(
+        //         "Driver profile not found. Please complete driver registration first"
+        //     );
+        // }
 
-        return driverProfile;
+        return driverProfile ?? [];
     }
 
     async login(

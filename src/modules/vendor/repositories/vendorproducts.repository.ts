@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { VendorProfileModel } from "../../vendorprofile/models/vendorprofile.model.js";
 import { ProductModel } from "../../product/models/product.model.js";
+import { isProductAvailableNow } from "../utils/timetominutes.util.js";
 
 export class VendorProductsRepository {
     async findVendorWithProducts(
@@ -29,7 +30,10 @@ export class VendorProductsRepository {
         };
 
         if (search) {
-            productFilter.name = { $regex: search, $options: "i" };
+            productFilter.name = {
+                $regex: search,
+                $options: "i",
+            };
         }
 
         console.log(category);
@@ -40,14 +44,24 @@ export class VendorProductsRepository {
 
         if (minPrice || maxPrice) {
             productFilter.mrp = {};
-            if (minPrice) productFilter.mrp.$gte = minPrice;
-            if (maxPrice) productFilter.mrp.$lte = maxPrice;
+
+            if (minPrice) {
+                productFilter.mrp.$gte = minPrice;
+            }
+
+            if (maxPrice) {
+                productFilter.mrp.$lte = maxPrice;
+            }
         }
 
         if (inStock) {
-            productFilter.stock = { $gt: 0 };
+            productFilter.stock = {
+                $gt: 0,
+            };
         }
+
         console.log("Product filter:", productFilter);
+
         const [products, total] = await Promise.all([
             ProductModel.find(productFilter)
                 .populate("category", "name")
@@ -61,22 +75,41 @@ export class VendorProductsRepository {
             ProductModel.countDocuments(productFilter),
         ]);
 
-        console.log("Products found:", products, "Total:", total);
+        console.log(
+            "Products found:",
+            products,
+            "Total:",
+            total
+        );
+
+        const productsWithAvailability = products.map(
+            (product: any) => ({
+                ...product,
+                isAvailableNow: isProductAvailableNow(
+                    product.availability
+                ),
+            })
+        );
 
         const categoriesMap = new Map();
 
-        products.forEach((product: any) => {
+        productsWithAvailability.forEach((product: any) => {
             if (product.category) {
-                categoriesMap.set(product.category._id.toString(), product.category);
+                categoriesMap.set(
+                    product.category._id.toString(),
+                    product.category
+                );
             }
         });
 
-        const categories = Array.from(categoriesMap.values());
+        const categories = Array.from(
+            categoriesMap.values()
+        );
 
         return {
             vendor,
             categories,
-            products,
+            products: productsWithAvailability,
             page,
             limit,
             total,
