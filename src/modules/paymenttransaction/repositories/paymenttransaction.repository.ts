@@ -224,4 +224,20 @@ export class PaymentTransactionRepository {
             { new: true }
         );
     }
+
+    async findBuyForMeById(id: string) {
+        return await BuyForMeRequestModel.findOne({ _id: id, isActive: true });
+    }
+
+    async markBuyForMePaid(requestId: string, transactionId: string) {
+        return await BuyForMeRequestModel.findByIdAndUpdate(
+            requestId,
+            {
+                paymentTransaction: transactionId,
+                paymentStatus: "paid",
+                status: "confirmed",
+            },
+            { new: true }
+        );
+    }
 }

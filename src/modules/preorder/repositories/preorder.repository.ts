@@ -85,7 +85,7 @@ export class PreorderRepository {
 
         const configFilter: any = {
             vendor: { $in: vendorIds },
-            isActive: true,
+            // isActive: true,
         };
 
         const configs = await PreorderConfigModel.find(configFilter)
