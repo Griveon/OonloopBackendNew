@@ -27,7 +27,7 @@ export class PaymentTransactionController {
                 .json(ResponseUtil.badRequest(error.message));
         }
     };
-    
+
     createOrderTransaction = async (req: Request, res: Response) => {
         try {
             const result = await this.service.createOrderTransaction(req.body);

@@ -32,15 +32,15 @@ paymentTransactionsRoutes.post(
 );
 
 paymentTransactionsRoutes.post(
-    "/createpreorder",
+    "/createbuyforme",
     authMiddleware,
-    controller.createPreorderTransaction
+    controller.createBuyForMeTransaction
 );
 
 paymentTransactionsRoutes.post(
-    "/verifypreorder",
+    "/verifybuyforme",
     authMiddleware,
-    controller.verifyPreorder
+    controller.verifyBuyForMe
 );
 
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);

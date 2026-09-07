@@ -4,6 +4,7 @@ import { OrderModel } from "../../order/models/order.model.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 import { PersonalShopperBookingModel } from "../../personalshopper/models/personalshopper.model.js";
 import { PreorderOrderModel } from "../../preorder/models/preorderorder.model.js";
+import { BuyForMeRequestModel } from "../../buyforme/models/buyforme.model.js";
 
 export class PaymentTransactionRepository {
 
