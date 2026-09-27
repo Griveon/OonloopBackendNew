@@ -914,4 +914,113 @@ export class UserService {
 
         return safeUser;
     }
+
+    /**
+     * Permanently delete the currently authenticated account.
+     *
+     * Safety:
+     * - Requires the explicit confirmation word "DELETE".
+     * - If the account has a PIN, the PIN must be supplied and match.
+     * - If the account has no PIN but has a password, the password must match.
+     *
+     * Existing login / OTP behaviour is intentionally left unchanged.
+     */
+    async deleteAccount(
+        userId: string,
+        input: {
+            confirmation?: string;
+            pin?: string;
+            password?: string;
+        }
+    ) {
+        const confirmation = input?.confirmation
+            ?.toString()
+            .trim()
+            .toUpperCase();
+
+        if (confirmation !== "DELETE") {
+            throw new Error(
+                'Please type "DELETE" to confirm permanent account deletion'
+            );
+        }
+
+        const user: any =
+            await this.userRepository.findById(userId);
+
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        /**
+         * Your current application uses PIN as the primary login credential.
+         * If a PIN exists on the account, require it for deletion.
+         */
+        if (user.pin) {
+            const normalizedPin = input?.pin
+                ?.toString()
+                .trim();
+
+            if (!normalizedPin) {
+                throw new Error(
+                    "PIN is required to delete your account"
+                );
+            }
+
+            if (
+                user.pin.toString() !== normalizedPin
+            ) {
+                throw new Error("Invalid PIN");
+            }
+        } else if (user.password) {
+            /**
+             * Fallback for accounts that do not have a PIN.
+             *
+             * New/normal password records should be bcrypt hashes.
+             * The plain-text comparison is kept only for compatibility with
+             * legacy records that may already exist in the current database.
+             * Remove the legacy branch after all passwords are migrated.
+             */
+            const password = input?.password
+                ?.toString();
+
+            if (!password) {
+                throw new Error(
+                    "Password is required to delete your account"
+                );
+            }
+
+            const storedPassword =
+                user.password.toString();
+
+            const looksLikeBcryptHash =
+                /^\$2[aby]\$\d{2}\$/.test(
+                    storedPassword
+                );
+
+            const passwordMatches =
+                looksLikeBcryptHash
+                    ? await bcrypt.compare(
+                        password,
+                        storedPassword
+                    )
+                    : password === storedPassword;
+
+            if (!passwordMatches) {
+                throw new Error("Invalid password");
+            }
+        } else {
+            throw new Error(
+                "Unable to verify account ownership. Please contact support."
+            );
+        }
+
+        await this.userRepository.deleteAccountData(
+            userId
+        );
+
+        return {
+            deleted: true,
+        };
+    }
+
 }

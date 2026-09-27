@@ -24,20 +24,28 @@ export const authMiddleware = async (
     next: NextFunction
 ) => {
     try {
-
         const authHeader = req.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json(
-                ResponseUtil.unauthorized("Unauthorized: No token provided")
+                ResponseUtil.unauthorized(
+                    "Unauthorized: No token provided"
+                )
             );
         }
 
-        const token: any = authHeader.split(" ")[1];
+        const token = authHeader.split(" ")[1];
 
-        console.log(token);
-        
+        if (!token) {
+            return res.status(401).json(
+                ResponseUtil.unauthorized(
+                    "Unauthorized: No token provided"
+                )
+            );
+        }
+
         const secret = process.env.JWT_SECRET;
+
         if (!secret) {
             throw new Error("JWT_SECRET is not configured");
         }
@@ -48,17 +56,19 @@ export const authMiddleware = async (
             decoded = jwt.verify(token, secret);
         } catch (err) {
             return res.status(401).json(
-                ResponseUtil.unauthorized("Unauthorized: Invalid token")
+                ResponseUtil.unauthorized(
+                    "Unauthorized: Invalid token"
+                )
             );
         }
-
 
         if (!decoded || !decoded.id) {
             return res.status(401).json(
-                ResponseUtil.unauthorized("Unauthorized: Invalid token payload")
+                ResponseUtil.unauthorized(
+                    "Unauthorized: Invalid token payload"
+                )
             );
         }
-
 
         const user = await userService.getUserById(decoded.id);
 
@@ -67,7 +77,6 @@ export const authMiddleware = async (
                 ResponseUtil.notFound("User not found")
             );
         }
-
 
         req.user = {
             id: user._id.toString(),

@@ -55,6 +55,29 @@ export type TrackingUpdatedByRole =
     | "admin"
     | "system";
 
+/**
+ * system = registered Oonloop vendor/user
+ * custom = outside vendor that does not exist in our system
+ */
+export type VendorType = "system" | "custom";
+
+/**
+ * Snapshot of an outside/custom vendor.
+ * We intentionally do not create a fake User/VendorProfile for this vendor.
+ */
+export interface ICustomVendor {
+    externalVendorId?: string;
+
+    name: string;
+    phone: string;
+    address: string;
+
+    latitude?: number | null;
+    longitude?: number | null;
+
+    notes?: string;
+}
+
 export interface IOrderVendorItem {
     product: Types.ObjectId;
     variant?: Types.ObjectId | null;
@@ -62,8 +85,18 @@ export interface IOrderVendorItem {
     name: string;
     sku?: string;
 
+    /**
+     * Customer/order selling price.
+     * This remains unchanged even when sourced from an outside vendor.
+     */
     price: number;
     mrp?: number;
+
+    /**
+     * Actual amount paid to an outside/custom vendor.
+     * Keep this separate from customer selling price.
+     */
+    procurementPrice?: number | null;
 
     quantity: number;
 
@@ -74,15 +107,33 @@ export interface IOrderVendorItem {
     total: number;
 }
 
+export interface IAddressLocation {
+    type?: "Point";
+    coordinates?: number[];
+}
+
 export interface IAddress {
     name?: string;
     phone?: string;
+
     addressLine1?: string;
     addressLine2?: string;
+    landmark?: string;
+
     city?: string;
     state?: string;
+
     pincode?: string;
+    postalCode?: string;
     country?: string;
+
+    latitude?: number | null;
+    longitude?: number | null;
+    lat?: number | null;
+    lng?: number | null;
+
+    fullAddress?: string;
+    location?: IAddressLocation;
 }
 
 export interface ITrackingHistory {
@@ -129,7 +180,25 @@ export interface IOrderVendor {
     parentOrder: Types.ObjectId;
 
     user: Types.ObjectId;
-    vendor: Types.ObjectId;
+
+    /**
+     * Registered system vendor or outside/custom vendor.
+     * Optional keeps old creation code backward-compatible because
+     * mongoose applies the model default = "system".
+     */
+    vendorType?: VendorType;
+
+    /**
+     * Required for vendorType = "system".
+     * Null/undefined for vendorType = "custom".
+     */
+    vendor?: Types.ObjectId | null;
+
+    /**
+     * Present only when vendorType = "custom".
+     */
+    customVendor?: ICustomVendor;
+
     driver?: Types.ObjectId;
 
     orderNumber: string;

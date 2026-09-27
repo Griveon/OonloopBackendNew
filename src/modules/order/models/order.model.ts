@@ -1,13 +1,42 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { IOrderDocument } from "../interfaces/order.interface.js";
 
+
+const customVendorSchema = new Schema(
+    {
+        externalVendorId: { type: String, trim: true, default: "" },
+        name: { type: String, trim: true, default: "" },
+        phone: { type: String, trim: true, default: "" },
+        address: { type: String, trim: true, default: "" },
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null },
+        notes: { type: String, trim: true, default: "" },
+    },
+    { _id: false }
+);
+
 const orderItemSchema = new Schema(
     {
+        vendorType: {
+            type: String,
+            enum: ["system", "custom"],
+            default: "system",
+            index: true,
+        },
+
         vendor: {
             type: Schema.Types.ObjectId,
             ref: "User",
-            required: true,
+            required: function (this: any) {
+                return this.vendorType !== "custom";
+            },
+            default: null,
             index: true,
+        },
+
+        customVendor: {
+            type: customVendorSchema,
+            default: undefined,
         },
 
         product: {
@@ -42,6 +71,14 @@ const orderItemSchema = new Schema(
             type: Number,
             min: 0,
             default: 0,
+        },
+
+        // Optional actual cost paid to an outside/custom vendor.
+        // This does NOT change the customer-facing order total.
+        procurementPrice: {
+            type: Number,
+            min: 0,
+            default: null,
         },
 
         quantity: {
@@ -402,21 +439,38 @@ orderSchema.pre("validate", function () {
     const order: any = this;
 
     if (Array.isArray(order.items) && order.items.length > 0) {
-        const vendorIds = [
+        const systemVendorIds = [
             ...new Set(
                 order.items
+                    .filter((item: any) => item.vendorType !== "custom")
                     .map((item: any) => item.vendor?.toString())
                     .filter(Boolean)
             ),
         ];
 
-        order.vendors = vendorIds;
-        order.vendorOrderCount = vendorIds.length;
-        order.orderType =
-            vendorIds.length > 1 ? "multi_vendor" : "single_vendor";
+        const customVendorIds = [
+            ...new Set(
+                order.items
+                    .filter((item: any) => item.vendorType === "custom")
+                    .map((item: any) => item.customVendor?.externalVendorId)
+                    .filter(Boolean)
+            ),
+        ];
 
-        if (vendorIds.length === 1) {
-            order.vendor = vendorIds[0];
+        // Keep `vendors` as real system User ids only.
+        order.vendors = systemVendorIds;
+
+        const totalVendorCount =
+            systemVendorIds.length + customVendorIds.length;
+
+        order.vendorOrderCount = totalVendorCount;
+        order.orderType =
+            totalVendorCount > 1 ? "multi_vendor" : "single_vendor";
+
+        // Parent `vendor` is meaningful only when the whole order belongs
+        // to one system vendor and no custom vendor exists.
+        if (systemVendorIds.length === 1 && customVendorIds.length === 0) {
+            order.vendor = systemVendorIds[0];
         } else {
             order.vendor = undefined;
         }
@@ -437,6 +491,8 @@ orderSchema.pre("validate", function () {
 });
 
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ "items.vendorType": 1, createdAt: -1 });
+orderSchema.index({ "items.customVendor.externalVendorId": 1 });
 orderSchema.index({ vendor: 1, createdAt: -1 });
 orderSchema.index({ vendors: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });

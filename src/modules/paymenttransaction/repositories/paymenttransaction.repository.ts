@@ -7,7 +7,6 @@ import { PreorderOrderModel } from "../../preorder/models/preorderorder.model.js
 import { BuyForMeRequestModel } from "../../buyforme/models/buyforme.model.js";
 
 export class PaymentTransactionRepository {
-
     async create(data: Partial<IPaymentTransaction>) {
         return await PaymentTransactionModel.create(data);
     }
@@ -20,6 +19,13 @@ export class PaymentTransactionRepository {
     async findById(id: string) {
         return await PaymentTransactionModel.findOne({
             _id: id,
+            isActive: true,
+        });
+    }
+
+    async findByExternalOrderId(externalOrderId: string) {
+        return await PaymentTransactionModel.findOne({
+            externalOrderId,
             isActive: true,
         });
     }
@@ -40,41 +46,77 @@ export class PaymentTransactionRepository {
     }
 
     async markSuccess(id: string, externalPaymentId?: string) {
-        return await PaymentTransactionModel.findByIdAndUpdate(
-            id,
+        const update: any = {
+            status: "success",
+            paidAt: new Date(),
+        };
+
+        if (externalPaymentId) {
+            update.externalPaymentId = externalPaymentId;
+        }
+
+        const updated = await PaymentTransactionModel.findOneAndUpdate(
             {
-                status: "success",
-                externalPaymentId,
-                paidAt: new Date(),
+                _id: id,
+                isActive: true,
+                status: { $ne: "success" },
+            },
+            {
+                $set: update,
+                $unset: { failedAt: 1 },
             },
             { new: true }
         );
+
+        // Keep the old method contract: return the transaction even when it was
+        // already successful and no update was required.
+        return updated || await this.findById(id);
     }
 
     async markFailed(id: string) {
-        return await PaymentTransactionModel.findByIdAndUpdate(
-            id,
+        const updated = await PaymentTransactionModel.findOneAndUpdate(
             {
-                status: "failed",
-                failedAt: new Date(),
+                _id: id,
+                isActive: true,
+                status: { $ne: "success" },
+            },
+            {
+                $set: {
+                    status: "failed",
+                    failedAt: new Date(),
+                },
             },
             { new: true }
         );
+
+        return updated || await this.findById(id);
     }
 
     async cancel(id: string) {
-        return await PaymentTransactionModel.findByIdAndUpdate(
-            id,
-            { status: "cancelled" },
+        const updated = await PaymentTransactionModel.findOneAndUpdate(
+            {
+                _id: id,
+                isActive: true,
+                status: { $ne: "success" },
+            },
+            { $set: { status: "cancelled" } },
             { new: true }
         );
+
+        return updated || await this.findById(id);
     }
 
     async markOrderPaid(orderId: string, transactionId: string) {
         const paidAt = new Date();
 
-        const updatedOrder = await OrderModel.findByIdAndUpdate(
-            orderId,
+        // Update the parent order only once. This prevents duplicate tracking
+        // entries when mobile verification and Razorpay webhook arrive together.
+        const updatedOrder = await OrderModel.findOneAndUpdate(
+            {
+                _id: orderId,
+                isActive: true,
+                paymentStatus: { $ne: "success" },
+            },
             {
                 $set: {
                     paymentTransaction: transactionId,
@@ -95,10 +137,12 @@ export class PaymentTransactionRepository {
             { new: true }
         );
 
+        // Same idempotent protection for vendor orders.
         await OrderVendorModel.updateMany(
             {
                 parentOrder: orderId,
                 isActive: true,
+                paymentStatus: { $ne: "success" },
             },
             {
                 $set: {
@@ -119,14 +163,20 @@ export class PaymentTransactionRepository {
             }
         );
 
-        return updatedOrder;
+        return updatedOrder || await this.findOrderById(orderId);
     }
 
     async markOrderFailed(orderId: string) {
         const failedAt = new Date();
 
-        const updatedOrder = await OrderModel.findByIdAndUpdate(
-            orderId,
+        // Never downgrade an already-paid order because a late/duplicate failed
+        // event can arrive after another successful payment attempt.
+        const updatedOrder = await OrderModel.findOneAndUpdate(
+            {
+                _id: orderId,
+                isActive: true,
+                paymentStatus: { $ne: "success" },
+            },
             {
                 $set: {
                     status: "cancelled",
@@ -150,6 +200,7 @@ export class PaymentTransactionRepository {
             {
                 parentOrder: orderId,
                 isActive: true,
+                paymentStatus: { $ne: "success" },
             },
             {
                 $set: {
@@ -169,7 +220,7 @@ export class PaymentTransactionRepository {
             }
         );
 
-        return updatedOrder;
+        return updatedOrder || await this.findOrderById(orderId);
     }
 
     // ----- Personal Shopper booking -----
@@ -202,6 +253,7 @@ export class PaymentTransactionRepository {
 
     async markPreorderPaid(preorderId: string, transactionId: string) {
         const paidAt = new Date();
+
         return await PreorderOrderModel.findByIdAndUpdate(
             preorderId,
             {
@@ -226,7 +278,10 @@ export class PaymentTransactionRepository {
     }
 
     async findBuyForMeById(id: string) {
-        return await BuyForMeRequestModel.findOne({ _id: id, isActive: true });
+        return await BuyForMeRequestModel.findOne({
+            _id: id,
+            isActive: true,
+        });
     }
 
     async markBuyForMePaid(requestId: string, transactionId: string) {

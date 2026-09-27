@@ -1,8 +1,10 @@
 import { UserModel } from "../models/user.model.js";
 import type { IUser } from "../interfaces/user.interface.js";
 import { DriverProfileModel } from "../../driverprofile/models/driverprofile.model.js";
+import { UserProfileModel } from "../../userprofile/models/userprofile.model.js";
+import { VendorProfileModel } from "../../vendorprofile/models/vendorprofile.model.js";
 
-type UserRole = "admin" |"user" | "vendor" | "driver";
+type UserRole = "admin" | "user" | "vendor" | "driver";
 
 export class UserRepository {
     async createUser(data: Partial<IUser>) {
@@ -121,6 +123,41 @@ export class UserRepository {
         return await DriverProfileModel.findOne({
             user: userId,
         });
+    }
+
+    /**
+     * Permanently remove the known MongoDB documents owned by a user.
+     *
+     * Important:
+     * - User is deleted LAST.
+     * - This keeps the root account present if one of the related-profile
+     *   deletions throws an error.
+     * - Physical files stored in S3 / Cloudinary / Spaces are NOT removed
+     *   here because storage-provider code is not part of this repository.
+     */
+    async deleteAccountData(userId: string) {
+        await UserProfileModel.deleteMany({
+            user: userId,
+        });
+
+        await VendorProfileModel.deleteMany({
+            user: userId,
+        });
+
+        await DriverProfileModel.deleteMany({
+            user: userId,
+        });
+
+        const deletedUser =
+            await UserModel.findByIdAndDelete(userId);
+
+        if (!deletedUser) {
+            throw new Error("User not found");
+        }
+
+        return {
+            deleted: true,
+        };
     }
 
     /**

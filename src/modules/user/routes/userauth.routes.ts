@@ -5,11 +5,13 @@ import { signupSchema } from "../validations/user.validation.js";
 import { UserLoginController } from "../controllers/userlogin.controller.js";
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
 import { UserController } from "../controllers/userprofile.controller.js";
+import { UserMainController } from "../controllers/user.controller.js";
 
 const userAuthRoutes = Router();
 const userSingupController = new UserSingupController();
 const userLoginController = new UserLoginController();
 const userController = new UserController();
+const userMainController = new UserMainController();
 
 userAuthRoutes.post(
     "/signup",
@@ -26,5 +28,11 @@ userAuthRoutes.post("/send-otp", userLoginController.sendOtp);
 userAuthRoutes.get("/user/me", authMiddleware, userController.getProfile);
 userAuthRoutes.post("/verify-otp", userLoginController.verifyOtp);
 userAuthRoutes.put("/update-user-pin", userLoginController.updatePin);
+
+userAuthRoutes.delete(
+    "/user/account",
+    authMiddleware,
+    userMainController.deleteAccount
+);
 
 export default userAuthRoutes;

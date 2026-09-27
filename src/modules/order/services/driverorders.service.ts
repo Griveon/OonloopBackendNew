@@ -27,6 +27,8 @@ const validDeliveryTransitions: Record<string, string[]> = {
     reached_store: [
         "waiting_for_packing",
         "pickup_verification_pending",
+        // Outside/custom vendors do not have seller-app OTP verification.
+        "picked_up",
         "failed",
     ],
 
@@ -300,11 +302,15 @@ export class DriverOrderService {
             );
         }
 
+        const isCustomVendor = order.vendorType === "custom";
+
         const finalDeliveryStatus =
             deliveryStatus === "reached_store"
-                ? order.status === "ready_for_pickup"
-                    ? "pickup_verification_pending"
-                    : "waiting_for_packing"
+                ? isCustomVendor
+                    ? "reached_store"
+                    : order.status === "ready_for_pickup"
+                        ? "pickup_verification_pending"
+                        : "waiting_for_packing"
                 : deliveryStatus;
 
         const updateData: any = {
@@ -351,7 +357,10 @@ export class DriverOrderService {
                 updateData.waitingForPackingAt = new Date();
             }
 
-            if (finalDeliveryStatus === "pickup_verification_pending") {
+            if (
+                !isCustomVendor &&
+                finalDeliveryStatus === "pickup_verification_pending"
+            ) {
                 updateData.pickupVerification = {
                     pickupOtp: generateOtp(),
                     pickupQrCode: generatePickupQrCode(String(orderId)),
@@ -671,7 +680,25 @@ export class DriverOrderService {
                 variant?: string | null;
                 pickedQuantity: number;
                 shortQuantity: number;
-                newVendor: string;
+
+                // SYSTEM VENDOR
+                assignmentType?: "system" | "custom";
+                vendorType?: "system" | "custom";
+                newVendor?: string;
+                newProduct?: string | null;
+                newVariant?: string | null;
+
+                // CUSTOM / OUTSIDE VENDOR
+                customVendor?: {
+                    externalVendorId?: string;
+                    name?: string;
+                    phone?: string;
+                    address?: string;
+                    latitude?: number | null;
+                    longitude?: number | null;
+                    notes?: string;
+                };
+                procurementPrice?: number | null;
             }[];
             remark?: string;
         }
@@ -696,6 +723,12 @@ export class DriverOrderService {
 
         if (!currentOrder) {
             throw new Error("Order not found for this driver");
+        }
+
+        if (currentOrder.vendorType === "custom") {
+            throw new Error(
+                "Custom vendor orders cannot be reassigned again from this flow"
+            );
         }
 
         if (
@@ -728,18 +761,39 @@ export class DriverOrderService {
             });
 
         const currentItems = Array.isArray(currentOrder.items)
-            ? currentOrder.items.map((item: any) => {
-                const plainItem =
-                    typeof item.toObject === "function"
-                        ? item.toObject()
-                        : { ...item };
-
-                return plainItem;
-            })
+            ? currentOrder.items.map((item: any) =>
+                typeof item.toObject === "function"
+                    ? item.toObject()
+                    : { ...item }
+            )
             : [];
 
         const pickedItems: any[] = [];
-        const shortageGroups = new Map<string, any[]>();
+
+        type ShortageGroup = {
+            vendorType: "system" | "custom";
+
+            /**
+             * exactOptionalPropertyTypes is enabled.
+             *
+             * These properties are explicitly assigned `undefined` below
+             * depending on whether the shortage is going to a system vendor
+             * or a custom/outside vendor, so `undefined` must be part of the
+             * property type.
+             */
+            vendorId?: string | undefined;
+            customVendor?: any | undefined;
+
+            items: any[];
+        };
+
+        const shortageGroups = new Map<string, ShortageGroup>();
+
+        const buildExternalVendorId = () =>
+            `EXTV-${Date.now()}-${Math.random()
+                .toString(36)
+                .slice(2, 8)
+                .toUpperCase()}`;
 
         for (const currentItem of currentItems) {
             const currentProductId = String(
@@ -762,13 +816,10 @@ export class DriverOrderService {
                 );
             });
 
-            // If driver didn't send this item, keep it unchanged.
             if (!inputItem) {
                 pickedItems.push(currentItem);
                 continue;
             }
-
-            console.log("Processing input item:", inputItem);
 
             const originalQuantity = Number(currentItem.quantity || 0);
             const pickedQuantity = Number(inputItem.pickedQuantity || 0);
@@ -786,28 +837,84 @@ export class DriverOrderService {
                 );
             }
 
-            // Only require/validate newVendor when there is a shortage.
-            if (shortQuantity > 0) {
-                if (!inputItem.newVendor) {
-                    throw new Error(
-                        `${currentItem.name}: newVendor is required for short quantity`
-                    );
-                }
+            const assignmentType: "system" | "custom" =
+                inputItem.assignmentType === "custom" ||
+                    inputItem.vendorType === "custom"
+                    ? "custom"
+                    : "system";
 
-                if (
-                    String(inputItem.newVendor) ===
-                    String(currentOrder.vendor)
-                ) {
-                    throw new Error(
-                        "New vendor must be different from current vendor"
-                    );
+            let customVendorSnapshot: any = null;
+            let targetGroupKey = "";
+
+            if (shortQuantity > 0) {
+                if (assignmentType === "system") {
+                    if (!inputItem.newVendor) {
+                        throw new Error(
+                            `${currentItem.name}: newVendor is required for system vendor reassignment`
+                        );
+                    }
+
+                    if (
+                        String(inputItem.newVendor) ===
+                        String(currentOrder.vendor)
+                    ) {
+                        throw new Error(
+                            "New vendor must be different from current vendor"
+                        );
+                    }
+
+                    targetGroupKey = `system:${String(
+                        inputItem.newVendor
+                    )}`;
+                } else {
+                    const customVendor = inputItem.customVendor || {};
+                    const name = String(customVendor.name || "").trim();
+                    const phone = String(customVendor.phone || "").trim();
+                    const address = String(customVendor.address || "").trim();
+
+                    if (!name) {
+                        throw new Error("Outside vendor name is required");
+                    }
+
+                    if (!phone) {
+                        throw new Error("Outside vendor phone is required");
+                    }
+
+                    if (!address) {
+                        throw new Error("Outside vendor address is required");
+                    }
+
+                    const externalVendorId =
+                        String(customVendor.externalVendorId || "").trim() ||
+                        buildExternalVendorId();
+
+                    const rawLatitude: any = customVendor.latitude;
+                    const rawLongitude: any = customVendor.longitude;
+
+                    customVendorSnapshot = {
+                        externalVendorId,
+                        name,
+                        phone,
+                        address,
+                        latitude:
+                            rawLatitude === null ||
+                                rawLatitude === undefined ||
+                                rawLatitude === ""
+                                ? null
+                                : Number(rawLatitude),
+                        longitude:
+                            rawLongitude === null ||
+                                rawLongitude === undefined ||
+                                rawLongitude === ""
+                                ? null
+                                : Number(rawLongitude),
+                        notes: String(customVendor.notes || "").trim(),
+                    };
+
+                    targetGroupKey = `custom:${externalVendorId}`;
                 }
             }
 
-            // ---------------------------------------------------------
-            // CASE 1:
-            // Driver picked some quantity from current seller.
-            // ---------------------------------------------------------
             if (pickedQuantity > 0) {
                 pickedItems.push({
                     ...currentItem,
@@ -821,27 +928,44 @@ export class DriverOrderService {
                 });
             }
 
-            // ---------------------------------------------------------
-            // CASE 2:
-            // Driver picked 0 OR partial quantity.
-            // Shortage goes to new seller.
-            // ---------------------------------------------------------
             if (shortQuantity > 0) {
-                const vendorId = String(inputItem.newVendor);
+                const targetProduct =
+                    assignmentType === "system"
+                        ? inputItem.newProduct || currentProductId
+                        : currentProductId;
 
-                if (!shortageGroups.has(vendorId)) {
-                    shortageGroups.set(vendorId, []);
+                const targetVariant =
+                    assignmentType === "system"
+                        ? inputItem.newVariant ?? currentItem.variant ?? null
+                        : currentItem.variant || null;
+
+                if (!shortageGroups.has(targetGroupKey)) {
+                    shortageGroups.set(targetGroupKey, {
+                        vendorType: assignmentType,
+                        vendorId:
+                            assignmentType === "system"
+                                ? String(inputItem.newVendor)
+                                : undefined,
+                        customVendor:
+                            assignmentType === "custom"
+                                ? customVendorSnapshot
+                                : undefined,
+                        items: [],
+                    });
                 }
 
-                shortageGroups.get(vendorId)!.push({
-                    product:
-                        currentItem.product?._id ||
-                        currentItem.product,
-                    variant: currentItem.variant || null,
+                shortageGroups.get(targetGroupKey)!.items.push({
+                    product: targetProduct,
+                    variant: targetVariant,
                     name: currentItem.name,
                     sku: currentItem.sku,
                     price: currentItem.price,
                     mrp: currentItem.mrp,
+                    procurementPrice:
+                        inputItem.procurementPrice === null ||
+                            inputItem.procurementPrice === undefined
+                            ? null
+                            : Number(inputItem.procurementPrice),
                     quantity: shortQuantity,
                     images: currentItem.images || [],
                     total:
@@ -854,31 +978,23 @@ export class DriverOrderService {
             }
         }
 
-        // There must be at least one shortage to create a reassignment.
         if (shortageGroups.size === 0) {
-            throw new Error(
-                "No shortage quantity found for reassignment"
-            );
+            throw new Error("No shortage quantity found for reassignment");
         }
 
         const pickedSubtotal =
             Math.round(
-                pickedItems.reduce((sum: number, item: any) => {
-                    return sum + Number(item.total || 0);
-                }, 0) * 100
+                pickedItems.reduce(
+                    (sum: number, item: any) =>
+                        sum + Number(item.total || 0),
+                    0
+                ) * 100
             ) / 100;
 
-        console.log("pickedItems:", pickedItems);
-        console.log("shortageGroups:", shortageGroups);
-
-        // ---------------------------------------------------------
-        // CURRENT VENDOR ORDER UPDATE
-        // ---------------------------------------------------------
         const currentOrderUpdateData: any = {
             discount: 0,
             gstAmount: 0,
             shippingCharge: 0,
-
             $push: {
                 trackingHistory: {
                     title: "Partial pickup completed",
@@ -888,7 +1004,7 @@ export class DriverOrderService {
                             : "cancelled",
                     remark:
                         payload.remark ||
-                        "Rider picked available quantity and reassigned shortage quantity to another seller.",
+                        "Rider picked available quantity and reassigned the shortage.",
                     updatedBy: driverId,
                     updatedByRole: "driver",
                     updatedAt: now,
@@ -896,19 +1012,10 @@ export class DriverOrderService {
             },
         };
 
-        // ---------------------------------------------------------
-        // IMPORTANT:
-        // Only set items/subtotal/totalAmount when current vendor
-        // still has at least one picked item.
-        //
-        // If pickedItems = [], we DON'T send items: [] because
-        // orderVendorItemSchema requires at least one item.
-        // ---------------------------------------------------------
         if (pickedItems.length > 0) {
             currentOrderUpdateData.items = pickedItems;
             currentOrderUpdateData.subtotal = pickedSubtotal;
             currentOrderUpdateData.totalAmount = pickedSubtotal;
-
             currentOrderUpdateData.status = "shipped";
             currentOrderUpdateData.deliveryStatus = "picked_up";
             currentOrderUpdateData.sellerStatus = "handed_to_rider";
@@ -916,12 +1023,6 @@ export class DriverOrderService {
             currentOrderUpdateData.shippedAt = now;
             currentOrderUpdateData.handedToRiderAt = now;
         } else {
-            // -----------------------------------------------------
-            // Seller has ZERO quantity.
-            //
-            // Do NOT update items to [].
-            // Just cancel/fail the current vendor order.
-            // -----------------------------------------------------
             currentOrderUpdateData.status = "cancelled";
             currentOrderUpdateData.sellerStatus = "cancelled";
             currentOrderUpdateData.deliveryStatus = "failed";
@@ -938,119 +1039,111 @@ export class DriverOrderService {
                 currentOrderUpdateData
             );
 
-        // ---------------------------------------------------------
-        // CREATE NEW VENDOR ORDERS FOR SHORTAGE
-        // ---------------------------------------------------------
         const createdVendorOrders: any[] = [];
         let newIndex = existingVendorOrderCount + 1;
 
-        for (const [
-            newVendorId,
-            shortageItems,
-        ] of shortageGroups.entries()) {
+        for (const group of shortageGroups.values()) {
             const shortageSubtotal =
                 Math.round(
-                    shortageItems.reduce(
-                        (sum: number, item: any) => {
-                            return sum + Number(item.total || 0);
-                        },
+                    group.items.reduce(
+                        (sum: number, item: any) =>
+                            sum + Number(item.total || 0),
                         0
                     ) * 100
                 ) / 100;
 
-            const vendorOrderNumber = `${currentOrder.orderNumber}-V${newIndex}`;
+            const vendorOrderNumber =
+                `${currentOrder.orderNumber}-V${newIndex}`;
 
-            const pickupOtp = generateOtp();
             const deliveryOtp = generateOtp();
+            const isCustom = group.vendorType === "custom";
 
-            const pickupQrCode =
-                generatePickupQrCode(vendorOrderNumber);
+            const newVendorOrderData: any = {
+                parentOrder: currentOrder.parentOrder,
+                user: currentOrder.user,
+                vendorType: group.vendorType,
+                vendor: isCustom ? undefined : group.vendorId,
+                customVendor: isCustom ? group.customVendor : undefined,
+                driver: isCustom ? driverId : undefined,
+                orderNumber: currentOrder.orderNumber,
+                vendorOrderNumber,
+                items: group.items,
+                billingAddress: currentOrder.billingAddress,
+                shippingAddress: currentOrder.shippingAddress,
+                paymentMethod: currentOrder.paymentMethod,
+                paymentTransaction: currentOrder.paymentTransaction,
+                subtotal: shortageSubtotal,
+                discount: 0,
+                gstAmount: 0,
+                shippingCharge: 0,
+                totalAmount: shortageSubtotal,
+                paymentStatus: currentOrder.paymentStatus,
+                paymentMode: currentOrder.paymentMode,
 
-            const newVendorOrder =
-                await OrderVendorModel.create({
-                    parentOrder: currentOrder.parentOrder,
+                // Outside vendors have no seller app/account, so the same
+                // driver can immediately start travelling to that shop.
+                status: isCustom ? "ready_for_pickup" : "placed",
+                sellerStatus: isCustom
+                    ? "ready_for_pickup"
+                    : "pending_acceptance",
+                deliveryStatus: isCustom
+                    ? "delivery_accepted"
+                    : "not_assigned",
+                sellerAcceptedAt: isCustom ? now : undefined,
+                readyForPickupAt: isCustom ? now : undefined,
+                driverAssignedAt: isCustom ? now : undefined,
+                deliveryAcceptedAt: isCustom ? now : undefined,
+                isLiveTrackingEnabled: isCustom,
 
-                    user: currentOrder.user,
-
-                    vendor: newVendorId,
-
-                    orderNumber: currentOrder.orderNumber,
-
-                    vendorOrderNumber,
-
-                    items: shortageItems,
-
-                    billingAddress: currentOrder.billingAddress,
-
-                    shippingAddress: currentOrder.shippingAddress,
-
-                    paymentMethod: currentOrder.paymentMethod,
-
-                    paymentTransaction:
-                        currentOrder.paymentTransaction,
-
-                    subtotal: shortageSubtotal,
-
-                    discount: 0,
-
-                    gstAmount: 0,
-
-                    shippingCharge: 0,
-
-                    totalAmount: shortageSubtotal,
-
-                    paymentStatus: currentOrder.paymentStatus,
-
-                    paymentMode: currentOrder.paymentMode,
-
-                    status: "placed",
-
-                    sellerStatus: "pending_acceptance",
-
-                    deliveryStatus: "not_assigned",
-
-                    pickupVerification: {
-                        pickupOtp,
-                        pickupQrCode,
+                pickupVerification: isCustom
+                    ? {
+                        otpVerified: false,
+                        qrVerified: false,
+                    }
+                    : {
+                        pickupOtp: generateOtp(),
+                        pickupQrCode:
+                            generatePickupQrCode(vendorOrderNumber),
                         otpVerified: false,
                         qrVerified: false,
                     },
 
-                    customerVerification: {
-                        deliveryOtp,
-                        otpVerified: false,
-                        signatureTaken: false,
+                customerVerification: {
+                    deliveryOtp,
+                    otpVerified: false,
+                    signatureTaken: false,
+                },
+
+                trackingHistory: [
+                    {
+                        title: isCustom
+                            ? "Outside vendor assigned"
+                            : "Order reassigned to new seller",
+                        status: isCustom
+                            ? "delivery_accepted"
+                            : "placed",
+                        remark:
+                            payload.remark ||
+                            (isCustom
+                                ? `Shortage assigned to outside vendor ${group.customVendor?.name || ""}.`
+                                : "Shortage quantity reassigned from previous seller."),
+                        updatedBy: driverId,
+                        updatedByRole: "driver",
+                        updatedAt: now,
                     },
+                ],
+                isActive: true,
+            };
 
-                    trackingHistory: [
-                        {
-                            title: "Order reassigned to new seller",
-
-                            status: "placed",
-
-                            remark:
-                                payload.remark ||
-                                "Shortage quantity reassigned from previous seller.",
-
-                            updatedBy: driverId,
-
-                            updatedByRole: "driver",
-
-                            updatedAt: now,
-                        },
-                    ],
-
-                    isActive: true,
-                });
+            const newVendorOrder =
+                await OrderVendorModel.create(newVendorOrderData);
 
             createdVendorOrders.push(newVendorOrder);
-
             newIndex++;
         }
 
-        // ---------------------------------------------------------
-        // UPDATE PARENT ORDER
-        // ---------------------------------------------------------
+        // Rebuild parent items so the parent order keeps a complete
+        // audit snapshot of where every quantity is being sourced.
         const parentItems: any[] = [];
 
         for (const parentItem of parentOrder.items || []) {
@@ -1074,7 +1167,6 @@ export class DriverOrderService {
 
             const splitInput = payload.items.find((item) => {
                 const inputProductId = String(item.product || "");
-
                 const inputVariantId = item.variant
                     ? String(item.variant)
                     : "";
@@ -1082,12 +1174,11 @@ export class DriverOrderService {
                 return (
                     inputProductId === parentProductId &&
                     inputVariantId === parentVariantId &&
-                    String(plainParentItem.vendor) ===
-                    String(currentOrder.vendor)
+                    String(plainParentItem.vendor || "") ===
+                    String(currentOrder.vendor || "")
                 );
             });
 
-            // Item was not part of reassignment.
             if (!splitInput) {
                 parentItems.push(plainParentItem);
                 continue;
@@ -1096,18 +1187,21 @@ export class DriverOrderService {
             const pickedQuantity = Number(
                 splitInput.pickedQuantity || 0
             );
-
             const shortQuantity = Number(
                 splitInput.shortQuantity || 0
             );
+            const assignmentType: "system" | "custom" =
+                splitInput.assignmentType === "custom" ||
+                    splitInput.vendorType === "custom"
+                    ? "custom"
+                    : "system";
 
-            // Current vendor gets picked quantity.
             if (pickedQuantity > 0) {
                 parentItems.push({
                     ...plainParentItem,
-
+                    vendorType: "system",
+                    customVendor: undefined,
                     quantity: pickedQuantity,
-
                     total:
                         Math.round(
                             Number(plainParentItem.price || 0) *
@@ -1117,30 +1211,85 @@ export class DriverOrderService {
                 });
             }
 
-            // New vendor gets shortage quantity.
             if (shortQuantity > 0) {
-                parentItems.push({
-                    ...plainParentItem,
+                if (assignmentType === "custom") {
+                    const matchingGroup = Array.from(
+                        shortageGroups.values()
+                    ).find((group) =>
+                        group.vendorType === "custom" &&
+                        group.items.some(
+                            (groupItem: any) =>
+                                String(groupItem.name) ===
+                                String(plainParentItem.name)
+                        )
+                    );
 
-                    vendor: splitInput.newVendor,
-
-                    quantity: shortQuantity,
-
-                    total:
-                        Math.round(
-                            Number(plainParentItem.price || 0) *
-                            shortQuantity *
-                            100
-                        ) / 100,
-                });
+                    parentItems.push({
+                        ...plainParentItem,
+                        vendorType: "custom",
+                        vendor: undefined,
+                        customVendor: matchingGroup?.customVendor,
+                        procurementPrice:
+                            splitInput.procurementPrice ?? null,
+                        quantity: shortQuantity,
+                        total:
+                            Math.round(
+                                Number(plainParentItem.price || 0) *
+                                shortQuantity *
+                                100
+                            ) / 100,
+                    });
+                } else {
+                    parentItems.push({
+                        ...plainParentItem,
+                        vendorType: "system",
+                        vendor: splitInput.newVendor,
+                        customVendor: undefined,
+                        product:
+                            splitInput.newProduct ||
+                            plainParentItem.product,
+                        variant:
+                            splitInput.newVariant ??
+                            plainParentItem.variant ??
+                            null,
+                        procurementPrice:
+                            splitInput.procurementPrice ?? null,
+                        quantity: shortQuantity,
+                        total:
+                            Math.round(
+                                Number(plainParentItem.price || 0) *
+                                shortQuantity *
+                                100
+                            ) / 100,
+                    });
+                }
             }
         }
 
-        const vendorIds = [
+        const systemVendorIds = [
             ...new Set(
                 parentItems
+                    .filter(
+                        (item: any) =>
+                            item.vendorType !== "custom"
+                    )
                     .map((item: any) =>
                         String(item.vendor || "")
+                    )
+                    .filter(Boolean)
+            ),
+        ];
+
+        const customVendorIds = [
+            ...new Set(
+                parentItems
+                    .filter(
+                        (item: any) =>
+                            item.vendorType === "custom"
+                    )
+                    .map(
+                        (item: any) =>
+                            item.customVendor?.externalVendorId
                     )
                     .filter(Boolean)
             ),
@@ -1149,23 +1298,23 @@ export class DriverOrderService {
         const parentSubtotal =
             Math.round(
                 parentItems.reduce(
-                    (sum: number, item: any) => {
-                        return sum + Number(item.total || 0);
-                    },
+                    (sum: number, item: any) =>
+                        sum + Number(item.total || 0),
                     0
                 ) * 100
             ) / 100;
 
         parentOrder.items = parentItems;
-        parentOrder.vendors = vendorIds;
-        parentOrder.vendorOrderCount = vendorIds.length;
+        parentOrder.vendors = systemVendorIds;
+        parentOrder.vendorOrderCount =
+            systemVendorIds.length + customVendorIds.length;
         parentOrder.orderType =
-            vendorIds.length > 1
+            parentOrder.vendorOrderCount > 1
                 ? "multi_vendor"
                 : "single_vendor";
         parentOrder.vendor =
-            vendorIds.length === 1
-                ? vendorIds[0]
+            systemVendorIds.length === 1 && customVendorIds.length === 0
+                ? systemVendorIds[0]
                 : undefined;
         parentOrder.subtotal = parentSubtotal;
         parentOrder.totalAmount =
@@ -1180,7 +1329,7 @@ export class DriverOrderService {
             status: "partially_shipped",
             remark:
                 payload.remark ||
-                "Available quantity picked from current seller and shortage quantity assigned to another seller.",
+                "Available quantity picked and shortage assigned to another source.",
             updatedBy: driverId,
             updatedByRole: "driver",
             updatedAt: now,
@@ -1271,19 +1420,36 @@ export class DriverOrderService {
             ""
         );
 
-        const vendors = await this.repo.findReassignVendorsForItem({
-            productId: payload.product,
-            variantId: payload.variant || null,
-            currentVendorId,
-            requiredQuantity: Number(payload.shortQuantity),
-        });
+        const [variantDetails, vendors] = await Promise.all([
+            this.repo.findProductVariantDetails(
+                payload.product,
+                payload.variant || null
+            ),
+            this.repo.findReassignVendorsForItem({
+                productId: payload.product,
+                variantId: payload.variant || null,
+                currentVendorId,
+                requiredQuantity: Number(payload.shortQuantity),
+            }),
+        ]);
 
         return {
             product: payload.product,
+
+            // Existing id is kept for backward compatibility.
             variant: payload.variant || null,
+
+            // Exact selected product variant resolved from Product.variants.
+            variantDetails,
+
             shortQuantity: Number(payload.shortQuantity),
             currentVendor: currentVendorId,
             vendors,
+
+            // Frontend can show the outside-vendor form when no system
+            // vendor has enough stock. It can also expose it manually.
+            customVendorAllowed: true,
+            hasSystemVendorWithRequiredQty: vendors.length > 0,
         };
     }
 }

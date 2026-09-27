@@ -1,22 +1,39 @@
 import { Router } from "express";
+
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
+
 import { ProductContainerController } from "../controllers/productcontainer.controller.js";
+
 import { ProductContainerProductsController } from "../controllers/productcontainerproducts.controller.js";
 
 const router = Router();
 
 const controller =
     new ProductContainerController();
+
 const productContainerProductsController =
     new ProductContainerProductsController();
 
-const productContainerRoutes = Router();
+const productContainerRoutes =
+    Router();
+
+/**
+ * ============================================================
+ * PROTECTED CREATE
+ * ============================================================
+ */
 
 productContainerRoutes.post(
     "/create",
     authMiddleware,
     controller.create
 );
+
+/**
+ * ============================================================
+ * PUBLIC CUSTOMER READ APIS
+ * ============================================================
+ */
 
 productContainerRoutes.get(
     "/products/:containerId",
@@ -32,6 +49,12 @@ productContainerRoutes.get(
     "/get/:id",
     controller.getById
 );
+
+/**
+ * ============================================================
+ * PROTECTED MANAGEMENT APIS
+ * ============================================================
+ */
 
 productContainerRoutes.put(
     "/update/:id",

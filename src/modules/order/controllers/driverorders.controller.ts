@@ -423,7 +423,7 @@ export class DriverOrderController {
 
             return res
                 .status(200)
-                .json(ResponseUtil.success("Partial pickup reassigned successfully", result));
+                .json(ResponseUtil.success("Shortage reassigned successfully", result));
         } catch (error: any) {
             return res
                 .status(400)

@@ -882,6 +882,63 @@ export class PaymentTransactionService {
         await cart.save();
     }
 
+    private async finalizeOrderPayment(transaction: any, razorpayPaymentId: string) {
+        const { orderId, userId } = transaction.metadata || {};
+
+        if (!orderId || !userId) {
+            throw new Error("Missing transaction metadata");
+        }
+
+        const orderBefore: any = await this.repo.findOrderById(orderId);
+
+        if (!orderBefore) {
+            throw new Error("Order not found");
+        }
+
+        const alreadyProcessed =
+            transaction.status === "success" &&
+            orderBefore.paymentStatus === "success";
+
+        // These repository methods are idempotent. If the mobile callback and
+        // Razorpay webhook arrive together, the payment/order is updated once.
+        await this.repo.markSuccess(
+            transaction._id.toString(),
+            razorpayPaymentId
+        );
+
+        const updatedOrder: any = await this.repo.markOrderPaid(
+            orderId.toString(),
+            transaction._id.toString()
+        );
+
+        // $pull is naturally safe to repeat and keeps the cart correct even if
+        // an earlier request updated payment state but failed before cart cleanup.
+        await this.removeOrderedItemsFromCart(
+            userId,
+            orderBefore.items || []
+        );
+
+        // Avoid duplicate notifications on normal retries. The repository also
+        // prevents duplicate payment tracking-history rows.
+        if (orderBefore.paymentStatus !== "success") {
+            void Promise.allSettled([
+                this.sendOrderPaidNotificationToVendors(orderId),
+                this.sendOrderPaidNotificationToDrivers(orderId),
+            ]);
+        }
+
+        return {
+            success: true,
+            message: alreadyProcessed
+                ? "Order already verified"
+                : "Payment verified & order confirmed",
+            alreadyProcessed,
+            orderId: updatedOrder?._id || orderBefore._id,
+            paymentTransaction: transaction._id,
+            razorpayPaymentId,
+        };
+    }
+
     async verifyOrderPayment(data: any) {
         const {
             transactionId,
@@ -890,8 +947,8 @@ export class PaymentTransactionService {
             razorpay_signature,
         } = data;
 
-        if (!transactionId || !razorpay_payment_id || !razorpay_signature) {
-            throw new Error("Missing payment verification fields");
+        if (!transactionId) {
+            throw new Error("Transaction ID is required");
         }
 
         const transaction: any = await this.repo.findById(transactionId);
@@ -900,36 +957,37 @@ export class PaymentTransactionService {
             throw new Error("Transaction not found");
         }
 
-        // ----- DEV-ONLY demo: confirm without signature check -----
+        // ----- DEV-ONLY demo: confirm without Razorpay signature -----
         if ((transaction.metadata as any)?.demo === true) {
             if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
                 throw new Error("Demo payment is not enabled");
             }
-            const { orderId: demoOrderId } = transaction.metadata || {};
-            if (!demoOrderId) throw new Error("Missing transaction metadata");
-            const demoOrder = await this.repo.findOrderById(demoOrderId);
-            if (!demoOrder) throw new Error("Order not found");
-            if (demoOrder.status !== "pending") {
-                throw new Error("Order already processed");
-            }
-            await this.repo.markSuccess(transactionId, razorpay_payment_id || `DEMO-PAY-${Date.now()}`);
-            await this.repo.markOrderPaid(demoOrderId, transactionId);
-            return {
-                success: true,
-                message: "Payment verified & order confirmed",
-                orderId: demoOrder._id,
-            };
+
+            const demoPaymentId =
+                razorpay_payment_id || `DEMO-PAY-${Date.now()}`;
+
+            return await this.finalizeOrderPayment(
+                transaction,
+                demoPaymentId
+            );
         }
 
-        // ✅ Match orderId
+        if (
+            !razorpay_order_id ||
+            !razorpay_payment_id ||
+            !razorpay_signature
+        ) {
+            throw new Error("Missing payment verification fields");
+        }
+
         if (transaction.externalOrderId !== razorpay_order_id) {
             await this.repo.markFailed(transactionId);
-            throw new Error("Order ID mismatch");
+            throw new Error("Razorpay order ID mismatch");
         }
 
-        const { orderId, userId } = transaction.metadata || {};
+        const { orderId } = transaction.metadata || {};
 
-        if (!orderId || !userId) {
+        if (!orderId) {
             throw new Error("Missing transaction metadata");
         }
 
@@ -939,9 +997,9 @@ export class PaymentTransactionService {
             throw new Error("Order not found");
         }
 
-        // Idempotent response: retries from the mobile app or webhook are safe.
+        // Only return early when BOTH documents are already consistent.
         if (
-            transaction.status === "success" ||
+            transaction.status === "success" &&
             order.paymentStatus === "success"
         ) {
             return {
@@ -950,12 +1008,9 @@ export class PaymentTransactionService {
                 alreadyProcessed: true,
                 orderId: order._id,
                 paymentTransaction: transaction._id,
+                razorpayPaymentId:
+                    transaction.externalPaymentId || razorpay_payment_id,
             };
-        }
-
-        if (transaction.externalOrderId !== razorpay_order_id) {
-            await this.repo.markFailed(transactionId);
-            throw new Error("Razorpay order ID mismatch");
         }
 
         const provider: any = await ProviderConnectionModel.findById(
@@ -994,8 +1049,8 @@ export class PaymentTransactionService {
             throw new Error("Invalid Razorpay payment signature");
         }
 
-        // Never trust only the mobile callback. Confirm the payment directly
-        // with Razorpay before updating the order in MongoDB.
+        // Confirm the payment directly with Razorpay instead of trusting only
+        // the mobile success callback.
         const razorpay = new Razorpay({
             key_id: keyId,
             key_secret: keySecret,
@@ -1008,7 +1063,10 @@ export class PaymentTransactionService {
                 razorpay_payment_id
             );
         } catch (error: any) {
-            console.error("Razorpay payment fetch failed:", error?.error || error);
+            console.error(
+                "Razorpay payment fetch failed:",
+                error?.error || error
+            );
             throw new Error(
                 "Payment was received but confirmation is temporarily unavailable. Please retry verification."
             );
@@ -1032,7 +1090,9 @@ export class PaymentTransactionService {
             throw new Error("Payment amount mismatch");
         }
 
-        const expectedCurrency = String(transaction.currency || "INR").toUpperCase();
+        const expectedCurrency = String(
+            transaction.currency || "INR"
+        ).toUpperCase();
         const razorpayCurrency = String(
             razorpayPayment?.currency || ""
         ).toUpperCase();
@@ -1042,8 +1102,8 @@ export class PaymentTransactionService {
             throw new Error("Payment currency mismatch");
         }
 
-        // In rare cases Checkout returns while payment is only authorized.
-        // Capture it from the server and then continue only after capture.
+        // Some accounts return an authorized payment before capture. Try to
+        // capture it; if auto-capture wins the race, fetch the latest state.
         if (razorpayPayment.status === "authorized") {
             try {
                 razorpayPayment = await razorpay.payments.capture(
@@ -1052,7 +1112,6 @@ export class PaymentTransactionService {
                     expectedCurrency
                 );
             } catch (error: any) {
-                // It may have been auto-captured between fetch and capture.
                 razorpayPayment = await razorpay.payments.fetch(
                     razorpay_payment_id
                 );
@@ -1061,32 +1120,135 @@ export class PaymentTransactionService {
 
         if (razorpayPayment?.status !== "captured") {
             throw new Error(
-                `Payment is not captured yet. Current Razorpay status: ${razorpayPayment?.status || "unknown"
-                }`
+                `Payment is not captured yet. Current Razorpay status: ${razorpayPayment?.status || "unknown"}`
             );
         }
 
-        await this.repo.markSuccess(transactionId, razorpay_payment_id);
-        await this.repo.markOrderPaid(orderId, transactionId);
+        return await this.finalizeOrderPayment(
+            transaction,
+            razorpay_payment_id
+        );
+    }
 
-        await this.removeOrderedItemsFromCart(
-            userId,
-            order.items
+    async handleRazorpayWebhook(
+        payload: any,
+        rawBody: Buffer,
+        signature: string
+    ) {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+        if (!webhookSecret) {
+            throw new Error("RAZORPAY_WEBHOOK_SECRET is not configured");
+        }
+
+        if (!rawBody || !Buffer.isBuffer(rawBody) || !signature) {
+            throw new Error("Invalid Razorpay webhook request");
+        }
+
+        const expectedSignature = crypto
+            .createHmac("sha256", webhookSecret)
+            .update(rawBody)
+            .digest("hex");
+
+        const expectedBuffer = Buffer.from(expectedSignature, "utf8");
+        const receivedBuffer = Buffer.from(String(signature), "utf8");
+
+        const signatureValid =
+            expectedBuffer.length === receivedBuffer.length &&
+            crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+
+        if (!signatureValid) {
+            throw new Error("Invalid Razorpay webhook signature");
+        }
+
+        const event = String(payload?.event || "");
+        const payment = payload?.payload?.payment?.entity;
+
+        // We intentionally acknowledge unrelated events so Razorpay does not
+        // repeatedly retry them.
+        if (!payment?.order_id) {
+            return {
+                success: true,
+                ignored: true,
+                message: `Webhook event ${event || "unknown"} ignored`,
+            };
+        }
+
+        const transaction: any = await this.repo.findByExternalOrderId(
+            payment.order_id
         );
 
-        void Promise.allSettled([
-            this.sendOrderPaidNotificationToVendors(orderId),
-            this.sendOrderPaidNotificationToDrivers(orderId),
-        ]);
+        if (!transaction) {
+            return {
+                success: true,
+                ignored: true,
+                message: "No local transaction found for Razorpay order",
+            };
+        }
 
-        return {
-            success: true,
-            message: "Payment verified & order confirmed",
-            alreadyProcessed: false,
-            orderId: order._id,
-            paymentTransaction: transaction._id,
-            razorpayPaymentId: razorpay_payment_id,
-        };
+        // This webhook finalizer is intentionally scoped to normal customer
+        // orders. Booking/preorder/buy-for-me/subscription flows keep their
+        // existing verification logic and are acknowledged here without change.
+        if (!(transaction.metadata as any)?.orderId) {
+            return {
+                success: true,
+                ignored: true,
+                message: "Webhook transaction is not a customer order",
+            };
+        }
+
+        if (event === "payment.failed") {
+            await this.repo.markFailed(transaction._id.toString());
+
+            return {
+                success: true,
+                message: "Failed Razorpay payment recorded",
+            };
+        }
+
+        if (event !== "payment.captured" && event !== "order.paid") {
+            return {
+                success: true,
+                ignored: true,
+                message: `Webhook event ${event} ignored`,
+            };
+        }
+
+        if (payment.order_id !== transaction.externalOrderId) {
+            throw new Error("Webhook Razorpay order ID mismatch");
+        }
+
+        const expectedAmountInPaise = Math.round(
+            Number(transaction.amount || 0) * 100
+        );
+
+        if (Number(payment.amount || 0) !== expectedAmountInPaise) {
+            throw new Error("Webhook payment amount mismatch");
+        }
+
+        const expectedCurrency = String(
+            transaction.currency || "INR"
+        ).toUpperCase();
+        const receivedCurrency = String(
+            payment.currency || ""
+        ).toUpperCase();
+
+        if (receivedCurrency !== expectedCurrency) {
+            throw new Error("Webhook payment currency mismatch");
+        }
+
+        if (payment.status !== "captured") {
+            return {
+                success: true,
+                ignored: true,
+                message: `Payment status is ${payment.status || "unknown"}`,
+            };
+        }
+
+        return await this.finalizeOrderPayment(
+            transaction,
+            payment.id
+        );
     }
 
     async getAll() {

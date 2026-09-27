@@ -59,21 +59,72 @@ export class DriverOrderRepository {
         return String(value?._id || value?.id || value || "");
     }
 
+    /**
+     * Resolve the exact product variant selected on an order item.
+     *
+     * Existing response is preserved:
+     *     variant: "<variant-id>"
+     *
+     * And frontend additionally receives:
+     *     variantDetails: { ...matched product variant }
+     */
+    private attachVariantDetailsToItems(items: any[] = []) {
+        return items.map((item: any) => {
+            const product = item?.product;
+            const variantId = this.getId(item?.variant);
+
+            if (!variantId || !product || typeof product === "string") {
+                return {
+                    ...item,
+                    variantDetails: null,
+                };
+            }
+
+            const variants = Array.isArray(product?.variants)
+                ? product.variants
+                : [];
+
+            const matchedVariant = variants.find((variant: any) => {
+                return this.getId(variant?._id) === variantId;
+            });
+
+            return {
+                ...item,
+                variantDetails: matchedVariant || null,
+            };
+        });
+    }
+
     private async attachVendorProfile(order: any) {
         if (!order) return order;
 
         const plainOrder = this.toPlain(order);
         const vendorId = this.getId(plainOrder?.vendor);
 
+        const plainItems = Array.isArray(plainOrder?.items)
+            ? plainOrder.items
+            : [];
+
+        const itemsWithVariantDetails =
+            this.attachVariantDetailsToItems(plainItems);
+
         const safeOrder = {
             ...plainOrder,
-            items: Array.isArray(plainOrder?.items) ? plainOrder.items : [],
-            totalItems: Array.isArray(plainOrder?.items)
-                ? plainOrder.items.reduce((sum: number, item: any) => {
-                    return sum + Number(item?.quantity || 0);
-                }, 0)
-                : 0,
+            items: itemsWithVariantDetails,
+            totalItems: plainItems.reduce((sum: number, item: any) => {
+                return sum + Number(item?.quantity || 0);
+            }, 0),
         };
+
+        // Custom/outside vendors do not have a User/VendorProfile.
+        // Keep the customVendor snapshot in the response and do not try
+        // to resolve a fake profile.
+        if (plainOrder?.vendorType === "custom") {
+            return {
+                ...safeOrder,
+                vendorProfile: null,
+            };
+        }
 
         if (!vendorId) {
             return {
@@ -102,9 +153,56 @@ export class DriverOrderRepository {
             .populate("user", "firstName lastName mobileNumber email")
             .populate("vendor", "firstName lastName mobileNumber email")
             .populate("driver")
-            .populate("items.product", "name slug images productCategory category vendorId")
+            .populate({
+                path: "items.product",
+                select: [
+                    "name",
+                    "slug",
+                    "images",
+                    "productCategory",
+                    "category",
+                    "vendorId",
+                    "variants",
+                ].join(" "),
+                populate: {
+                    path: "variants.unit",
+                    select: "name symbol code",
+                },
+            })
             .populate("paymentMethod")
             .populate("paymentTransaction");
+    }
+
+    /**
+     * Fetch only the selected variant for a product.
+     * Used when an API already has productId + variantId and needs to send
+     * the selected variant details to frontend.
+     */
+    async findProductVariantDetails(
+        productId: string,
+        variantId?: string | null
+    ) {
+        if (!productId || !variantId) {
+            return null;
+        }
+
+        const product: any = await ProductModel.findOne({
+            _id: productId,
+            "variants._id": variantId,
+        })
+            .select("variants")
+            .populate("variants.unit")
+            .lean();
+
+        if (!product || !Array.isArray(product.variants)) {
+            return null;
+        }
+
+        return (
+            product.variants.find((variant: any) => {
+                return this.getId(variant?._id) === String(variantId);
+            }) || null
+        );
     }
 
     private getAvailableBaseQuery(filter: any = {}) {
@@ -724,57 +822,132 @@ export class DriverOrderRepository {
         requiredQuantity: number;
     }) {
         const currentProduct: any = await ProductModel.findById(payload.productId)
-            .select("name slug productCategory category subCategory brand")
+            .select(
+                "name slug productCategory category attributes variants images stock mrp"
+            )
+            .populate("variants.unit", "name symbol code")
             .lean();
 
         if (!currentProduct) {
             throw new Error("Product not found");
         }
 
+        const currentVariant = payload.variantId
+            ? (currentProduct.variants || []).find((variant: any) =>
+                this.getId(variant?._id) === String(payload.variantId)
+            )
+            : null;
+
+        const normalizeAttributes = (value: any) => {
+            if (!value) return "";
+
+            const plain = value instanceof Map
+                ? Object.fromEntries(value.entries())
+                : value;
+
+            if (!plain || typeof plain !== "object") {
+                return String(plain || "");
+            }
+
+            return JSON.stringify(
+                Object.keys(plain)
+                    .sort()
+                    .reduce((acc: any, key) => {
+                        acc[key] = plain[key];
+                        return acc;
+                    }, {})
+            );
+        };
+
+        const findEquivalentVariant = (product: any) => {
+            if (!payload.variantId) return null;
+
+            const variants = Array.isArray(product?.variants)
+                ? product.variants
+                : [];
+
+            if (!variants.length) return null;
+
+            // Best case: products actually share the same subdocument id.
+            const sameId = variants.find(
+                (variant: any) =>
+                    this.getId(variant?._id) === String(payload.variantId)
+            );
+
+            if (sameId) return sameId;
+            if (!currentVariant) return null;
+
+            const currentSku = String(currentVariant?.sku || "").trim();
+
+            if (currentSku) {
+                const skuMatch = variants.find(
+                    (variant: any) =>
+                        String(variant?.sku || "").trim() === currentSku
+                );
+
+                if (skuMatch) return skuMatch;
+            }
+
+            const currentUnitId = this.getId(currentVariant?.unit);
+            const currentUnitValue = Number(currentVariant?.unitValue);
+
+            const unitMatch = variants.find((variant: any) => {
+                const candidateUnitId = this.getId(variant?.unit);
+                const candidateUnitValue = Number(variant?.unitValue);
+
+                return (
+                    Number.isFinite(currentUnitValue) &&
+                    Number.isFinite(candidateUnitValue) &&
+                    currentUnitValue === candidateUnitValue &&
+                    currentUnitId === candidateUnitId
+                );
+            });
+
+            if (unitMatch) return unitMatch;
+
+            const currentAttributes = normalizeAttributes(
+                currentVariant?.attributes
+            );
+
+            if (currentAttributes && currentAttributes !== "{}") {
+                const attributeMatch = variants.find(
+                    (variant: any) =>
+                        normalizeAttributes(variant?.attributes) ===
+                        currentAttributes
+                );
+
+                if (attributeMatch) return attributeMatch;
+            }
+
+            return null;
+        };
+
         const productMatchQuery: any = {
             isActive: true,
-
-            $and: [
-                {
-                    vendorId: {
-                        $exists: true,
-                        $nin: [null, payload.currentVendorId],
-                    },
-                },
-            ],
-
+            vendorId: {
+                $exists: true,
+                $nin: [null, payload.currentVendorId],
+            },
             $or: [
                 { name: currentProduct.name },
                 { slug: currentProduct.slug },
-
                 ...(currentProduct.productCategory
                     ? [{ productCategory: currentProduct.productCategory }]
                     : []),
-
                 ...(currentProduct.category
                     ? [{ category: currentProduct.category }]
                     : []),
             ],
         };
 
-        if (payload.variantId) {
-            productMatchQuery.$and.push({
-                $or: [
-                    { "variants._id": payload.variantId },
-                    { variants: { $exists: false } },
-                    { variants: { $size: 0 } },
-                ],
-            });
-        }
-
         const products: any[] = await ProductModel.find(productMatchQuery)
             .select(
-                "name slug images price mrp stock quantity availableQuantity stockQuantity vendorId productCategory category"
+                "name slug images mrp stock vendorId productCategory category variants"
             )
             .populate("vendorId", "firstName lastName mobileNumber email")
+            .populate("variants.unit", "name symbol code")
             .sort({ updatedAt: -1 })
             .lean();
-
 
         const vendorIds = [
             ...new Set(
@@ -786,60 +959,74 @@ export class DriverOrderRepository {
             ),
         ];
 
-        console.log("Found products for reassignment:", vendorIds, "vendors");
-
-
         const vendorProfiles = await VendorProfileModel.find({
             user: { $in: vendorIds },
-            // isActive: true,
-            // profileStatus: { $in: ["approved", "active", "verified"] },
-            // isOnHoliday: { $ne: true },
         })
             .select(
                 "user storeName storeLogo storeLocationAddress workingHours workingDays isVerified isOnHoliday holidayMessage profileStatus"
             )
             .lean();
 
-        console.log("Found vendor profiles for reassignment:", vendorProfiles.length, "profiles");
-
         const profileMap = new Map(
-            vendorProfiles.map((profile: any) => [String(profile.user), profile])
+            vendorProfiles.map((profile: any) => [
+                String(profile.user),
+                profile,
+            ])
         );
 
         const vendorMap = new Map<string, any>();
+        const requiredQuantity = Math.max(1, Number(payload.requiredQuantity) || 1);
 
         for (const product of products) {
-            const vendorId = String(product.vendorId?._id || product.vendorId || "");
+            const vendorId = String(
+                product.vendorId?._id || product.vendorId || ""
+            );
 
             if (!vendorId || vendorId === String(payload.currentVendorId)) {
                 continue;
             }
 
-            const vendorProfile = profileMap.get(vendorId);
+            const vendorProfile: any = profileMap.get(vendorId);
 
             if (!vendorProfile) {
                 continue;
             }
 
+            const matchedVariant = payload.variantId
+                ? findEquivalentVariant(product)
+                : null;
+
+            // If the requested item has a variant, only vendors with an
+            // equivalent variant are valid alternatives.
+            if (payload.variantId && !matchedVariant) {
+                continue;
+            }
+
             const availableQuantity = Number(
-                product.availableQuantity ??
-                product.stockQuantity ??
-                product.quantity ??
-                product.stock ??
-                0
+                matchedVariant?.stock ?? product.stock ?? 0
             );
+
+            // This is the important fallback trigger: only return system
+            // vendors that can actually cover the complete shortage.
+            if (availableQuantity < requiredQuantity) {
+                continue;
+            }
 
             const productData = {
                 productId: product._id,
                 name: product.name,
                 slug: product.slug,
                 images: product.images || [],
-                price: product.price,
-                mrp: product.mrp,
+                price: matchedVariant?.price ?? null,
+                mrp: matchedVariant?.mrp ?? product.mrp ?? 0,
 
-                // Only for display. No filtering/checking.
+                // IDs now belong to the candidate vendor's product/variant.
+                variant: matchedVariant?._id || null,
+                variantId: matchedVariant?._id || null,
+                variantDetails: matchedVariant || null,
+                variants: product.variants || [],
+
                 availableQuantity,
-
                 productCategory: product.productCategory,
                 category: product.category,
             };
@@ -848,7 +1035,6 @@ export class DriverOrderRepository {
 
             if (existingVendor) {
                 existingVendor.products.push(productData);
-
                 existingVendor.availableQuantity = Math.max(
                     Number(existingVendor.availableQuantity || 0),
                     availableQuantity
@@ -856,20 +1042,18 @@ export class DriverOrderRepository {
             } else {
                 vendorMap.set(vendorId, {
                     vendorId,
+                    vendorType: "system",
                     vendorUser: product.vendorId || null,
                     vendorProfile,
-
                     storeName: vendorProfile?.storeName || "Seller",
                     storeLogo: vendorProfile?.storeLogo || "",
-                    storeLocationAddress: vendorProfile?.storeLocationAddress || null,
+                    storeLocationAddress:
+                        vendorProfile?.storeLocationAddress || null,
                     workingHours: vendorProfile?.workingHours || null,
                     workingDays: vendorProfile?.workingDays || [],
                     isVerified: !!vendorProfile?.isVerified,
                     profileStatus: vendorProfile?.profileStatus || "",
-
-                    // Only for display. Vendor will still come even if 0.
                     availableQuantity,
-
                     products: [productData],
                 });
             }
@@ -877,4 +1061,5 @@ export class DriverOrderRepository {
 
         return Array.from(vendorMap.values());
     }
+
 }

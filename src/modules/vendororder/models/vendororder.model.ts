@@ -1,6 +1,20 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { IOrderVendorDocument } from "../interfaces/vendororder.interface.js";
 
+
+const customVendorSchema = new Schema(
+    {
+        externalVendorId: { type: String, trim: true, default: "" },
+        name: { type: String, trim: true, default: "" },
+        phone: { type: String, trim: true, default: "" },
+        address: { type: String, trim: true, default: "" },
+        latitude: { type: Number, default: null },
+        longitude: { type: Number, default: null },
+        notes: { type: String, trim: true, default: "" },
+    },
+    { _id: false }
+);
+
 const orderVendorItemSchema = new Schema(
     {
         product: {
@@ -34,6 +48,12 @@ const orderVendorItemSchema = new Schema(
         mrp: {
             type: Number,
             min: 0,
+        },
+
+        procurementPrice: {
+            type: Number,
+            min: 0,
+            default: null,
         },
 
         quantity: {
@@ -319,11 +339,26 @@ const orderVendorSchema = new Schema<IOrderVendorDocument>(
             index: true,
         },
 
+        vendorType: {
+            type: String,
+            enum: ["system", "custom"],
+            default: "system",
+            index: true,
+        },
+
         vendor: {
             type: Schema.Types.ObjectId,
             ref: "User",
-            required: true,
+            required: function (this: any) {
+                return this.vendorType !== "custom";
+            },
+            default: null,
             index: true,
+        },
+
+        customVendor: {
+            type: customVendorSchema,
+            default: undefined,
         },
 
         driver: {
@@ -561,8 +596,39 @@ orderVendorSchema.virtual("totalItems").get(function () {
 orderVendorSchema.pre("validate", function () {
     const order: any = this;
 
-    if (order.isNew && !order.sellerAcceptDeadlineAt) {
-        order.sellerAcceptDeadlineAt = new Date(Date.now() + 5 * 60 * 1000);
+    if (order.vendorType === "custom") {
+        if (!order.customVendor?.name?.trim()) {
+            order.invalidate(
+                "customVendor.name",
+                "Custom vendor name is required"
+            );
+        }
+
+        if (!order.customVendor?.phone?.trim()) {
+            order.invalidate(
+                "customVendor.phone",
+                "Custom vendor phone is required"
+            );
+        }
+
+        if (!order.customVendor?.address?.trim()) {
+            order.invalidate(
+                "customVendor.address",
+                "Custom vendor address is required"
+            );
+        }
+
+        // There is no app seller account for a custom vendor.
+        order.vendor = undefined;
+        order.sellerAcceptDeadlineAt = undefined;
+    } else {
+        order.customVendor = undefined;
+
+        if (order.isNew && !order.sellerAcceptDeadlineAt) {
+            order.sellerAcceptDeadlineAt = new Date(
+                Date.now() + 5 * 60 * 1000
+            );
+        }
     }
 
     if (!order.paymentMode) {
@@ -580,6 +646,8 @@ orderVendorSchema.pre("validate", function () {
 });
 
 orderVendorSchema.index({ parentOrder: 1, createdAt: -1 });
+orderVendorSchema.index({ vendorType: 1, createdAt: -1 });
+orderVendorSchema.index({ "customVendor.externalVendorId": 1 });
 orderVendorSchema.index({ user: 1, createdAt: -1 });
 orderVendorSchema.index({ vendor: 1, createdAt: -1 });
 orderVendorSchema.index({ vendor: 1, sellerStatus: 1, createdAt: -1 });
