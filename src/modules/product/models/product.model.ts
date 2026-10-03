@@ -40,6 +40,31 @@ const availabilitySchema = new Schema(
     { _id: false }
 );
 
+const additionalHandlingSnapshotSchema = new Schema(
+    {
+        enabled: {
+            type: Boolean,
+            default: false,
+        },
+        percentage: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        maxAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        amount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+    },
+    { _id: false }
+);
+
 const variantSchema = new Schema<IProductVariant>(
     {
         attributes: { type: Map, of: Schema.Types.Mixed },
@@ -60,6 +85,15 @@ const variantSchema = new Schema<IProductVariant>(
             type: Number,
             default: 0,
             min: 0,
+        },
+        additionalHandling: {
+            type: additionalHandlingSnapshotSchema,
+            default: () => ({
+                enabled: false,
+                percentage: 0,
+                maxAmount: 0,
+                amount: 0,
+            }),
         },
         productSpecification: {
             type: String,
@@ -119,6 +153,15 @@ const productSchema = new Schema<IProduct>(
         customerSellingPrice: { type: Number, min: 0 },
         productHandlingCharges: { type: Number, default: 0, min: 0 },
         productHandling: { type: Number, default: 0, min: 0 },
+        additionalHandling: {
+            type: additionalHandlingSnapshotSchema,
+            default: () => ({
+                enabled: false,
+                percentage: 0,
+                maxAmount: 0,
+                amount: 0,
+            }),
+        },
         stock: { type: Number, default: 0 },
         isActive: { type: Boolean, default: true },
         isFeatured: { type: Boolean, default: false },

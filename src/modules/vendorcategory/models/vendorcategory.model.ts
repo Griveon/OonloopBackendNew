@@ -12,6 +12,26 @@ const imageSchema = new Schema(
     { _id: false }
 );
 
+const additionalHandlingSchema = new Schema(
+    {
+        enabled: {
+            type: Boolean,
+            default: false,
+        },
+        percentage: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        maxAmount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+    },
+    { _id: false }
+);
+
 const VendorCategorySchema: Schema<IVendorCategoryDocument> =
     new Schema(
         {
@@ -26,6 +46,15 @@ const VendorCategorySchema: Schema<IVendorCategoryDocument> =
             icon: {
                 type: [imageSchema],
                 default: [],
+            },
+
+            additionalHandling: {
+                type: additionalHandlingSchema,
+                default: () => ({
+                    enabled: false,
+                    percentage: 0,
+                    maxAmount: 0,
+                }),
             },
 
             isActive: {

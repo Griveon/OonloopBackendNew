@@ -163,7 +163,10 @@ export class PaymentTransactionRepository {
             }
         );
 
-        return updatedOrder || await this.findOrderById(orderId);
+        return {
+            order: updatedOrder || await this.findOrderById(orderId),
+            paymentStatusChanged: Boolean(updatedOrder),
+        };
     }
 
     async markOrderFailed(orderId: string) {

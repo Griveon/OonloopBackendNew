@@ -14,6 +14,14 @@ export interface IProductVariant {
     productSpecification?: any;
     productHandlingCharges?: any;
     productHandling?: number;
+    additionalHandling?: IAdditionalHandlingSnapshot;
+}
+
+export interface IAdditionalHandlingSnapshot {
+    enabled: boolean;
+    percentage: number;
+    maxAmount: number;
+    amount: number;
 }
 export interface IProductVideo {
     productId?: Types.ObjectId;
@@ -71,6 +79,7 @@ export interface IProduct {
     customerSellingPrice?: number;
     productHandlingCharges?: number;
     productHandling?: number;
+    additionalHandling?: IAdditionalHandlingSnapshot;
     stock?: number;
     isActive?: boolean;
     isFeatured?: boolean;

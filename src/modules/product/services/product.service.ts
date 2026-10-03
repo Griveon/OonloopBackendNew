@@ -1,9 +1,14 @@
 import { ProductRepository } from "../repositories/product.repository.js";
 import type { IProduct } from "../interfaces/product.interface.js";
 import { ProductModel } from "../models/product.model.js";
+import { VendorCategoryModel } from "../../vendorcategory/models/vendorcategory.model.js";
 import slugify from "slugify";
 import { CartModel } from "../../cart/models/cart.model.js";
-import { calculateProductHandling } from "../utils/pricing.util.js";
+import {
+    calculateProductHandling,
+    getDefaultAdditionalHandlingSnapshot,
+    type IAdditionalHandlingConfig,
+} from "../utils/pricing.util.js";
 
 export class ProductService {
     private repo: ProductRepository;
@@ -12,8 +17,27 @@ export class ProductService {
         this.repo = new ProductRepository();
     }
 
-    calculateHandling(sellingPrice: number | string, mrp: number | string) {
-        return calculateProductHandling(sellingPrice, mrp);
+    async calculateHandling(
+        sellingPrice: number | string,
+        mrp: number | string,
+        categoryId?: any
+    ) {
+        const additionalHandling = await this.getCategoryAdditionalHandling(categoryId);
+        return calculateProductHandling(sellingPrice, mrp, additionalHandling);
+    }
+
+    private async getCategoryAdditionalHandling(
+        categoryId: any
+    ): Promise<IAdditionalHandlingConfig | null> {
+        if (!categoryId) {
+            return null;
+        }
+
+        const category = await VendorCategoryModel.findById(categoryId)
+            .select("additionalHandling")
+            .lean();
+
+        return category?.additionalHandling ?? null;
     }
 
 
@@ -56,6 +80,8 @@ export class ProductService {
                 }))
             : [];
 
+        const additionalHandling = await this.getCategoryAdditionalHandling(data.category);
+
         // =========================================================
         // 2️⃣ CLEAN VIDEOS (ONLY CDN URLs)
         // =========================================================
@@ -82,16 +108,20 @@ export class ProductService {
                 const price = Number(v.price || 0);
                 const mrp = Number(v.mrp || 0);
                 let handlingCharges = Number(v.productHandlingCharges || 0);
+                let productHandling = Number(v.productHandling || handlingCharges);
                 let customerSellingPrice = Number(v.customerSellingPrice || price);
+                let variantAdditionalHandling = getDefaultAdditionalHandlingSnapshot();
+
+                if (price > 0 && mrp > 0 && price > mrp) {
+                    throw new Error("Selling price cannot exceed MRP");
+                }
 
                 if (price > 0 && mrp >= price) {
-                    try {
-                        const calculated = calculateProductHandling(price, mrp);
-                        handlingCharges = calculated.productHandlingCharges;
-                        customerSellingPrice = calculated.customerSellingPrice;
-                    } catch {
-                        // Keep fallback
-                    }
+                    const calculated = calculateProductHandling(price, mrp, additionalHandling);
+                    handlingCharges = calculated.productHandlingCharges;
+                    productHandling = calculated.productHandling;
+                    customerSellingPrice = calculated.customerSellingPrice;
+                    variantAdditionalHandling = calculated.additionalHandling;
                 } else if (price > 0 && !mrp) {
                     customerSellingPrice = price;
                 }
@@ -111,6 +141,8 @@ export class ProductService {
                     mrp,
                     productSpecification: v.productSpecification,
                     productHandlingCharges: handlingCharges,
+                    productHandling,
+                    additionalHandling: variantAdditionalHandling,
                     // Images handled by upload API
                     images: [],
                 };
@@ -128,16 +160,22 @@ export class ProductService {
         // 5️⃣ BUILD FINAL PRODUCT
         // =========================================================
         let rootCustomerSellingPrice = data.customerSellingPrice;
+        let rootProductHandlingCharges = data.productHandlingCharges;
+        let rootProductHandling = data.productHandling;
+        let rootAdditionalHandling = getDefaultAdditionalHandlingSnapshot();
         if (data.price !== undefined && data.price !== null) {
             const rootPrice = Number(data.price || 0);
             const rootMrp = Number(data.mrp || 0);
+            if (rootPrice > 0 && rootMrp > 0 && rootPrice > rootMrp) {
+                throw new Error("Selling price cannot exceed MRP");
+            }
+
             if (rootPrice > 0 && rootMrp >= rootPrice) {
-                try {
-                    const calc = calculateProductHandling(rootPrice, rootMrp);
-                    rootCustomerSellingPrice = calc.customerSellingPrice;
-                } catch {
-                    rootCustomerSellingPrice = rootPrice;
-                }
+                const calc = calculateProductHandling(rootPrice, rootMrp, additionalHandling);
+                rootCustomerSellingPrice = calc.customerSellingPrice;
+                rootProductHandlingCharges = calc.productHandlingCharges;
+                rootProductHandling = calc.productHandling;
+                rootAdditionalHandling = calc.additionalHandling;
             } else {
                 rootCustomerSellingPrice = rootPrice;
             }
@@ -156,6 +194,9 @@ export class ProductService {
             videos: safeVideos,
             variants: safeVariants,
             ...(rootCustomerSellingPrice !== undefined ? { customerSellingPrice: rootCustomerSellingPrice } : {}),
+            ...(rootProductHandlingCharges !== undefined ? { productHandlingCharges: rootProductHandlingCharges } : {}),
+            ...(rootProductHandling !== undefined ? { productHandling: rootProductHandling } : {}),
+            additionalHandling: rootAdditionalHandling,
         };
 
         console.log("📦 Final Product Payload Availability:", productPayload.availability);
@@ -248,18 +289,29 @@ export class ProductService {
         delete updatePayload.videos;
         delete updatePayload.variants;
 
-        if (updatePayload.price !== undefined) {
-            const rootPrice = Number(updatePayload.price || 0);
+        const pricingCategoryId = updatePayload.category ?? existing.category;
+        const additionalHandling = await this.getCategoryAdditionalHandling(pricingCategoryId);
+
+        if (
+            updatePayload.price !== undefined ||
+            updatePayload.mrp !== undefined ||
+            updatePayload.category !== undefined
+        ) {
+            const rootPrice = Number(updatePayload.price ?? existing.price ?? 0);
             const rootMrp = Number(updatePayload.mrp ?? existing.mrp ?? 0);
+            if (rootPrice > 0 && rootMrp > 0 && rootPrice > rootMrp) {
+                throw new Error("Selling price cannot exceed MRP");
+            }
+
             if (rootPrice > 0 && rootMrp >= rootPrice) {
-                try {
-                    const calc = calculateProductHandling(rootPrice, rootMrp);
-                    updatePayload.customerSellingPrice = calc.customerSellingPrice;
-                } catch {
-                    updatePayload.customerSellingPrice = rootPrice;
-                }
+                const calc = calculateProductHandling(rootPrice, rootMrp, additionalHandling);
+                updatePayload.customerSellingPrice = calc.customerSellingPrice;
+                updatePayload.productHandlingCharges = calc.productHandlingCharges;
+                updatePayload.productHandling = calc.productHandling;
+                updatePayload.additionalHandling = calc.additionalHandling;
             } else {
                 updatePayload.customerSellingPrice = rootPrice;
+                updatePayload.additionalHandling = getDefaultAdditionalHandlingSnapshot();
             }
         }
 
@@ -314,21 +366,31 @@ export class ProductService {
 
         // 4️⃣ VARIANTS → replace scalar fields + preserve/filter existing images only.
         //    New variant images arrive via /upload/variant-image which $pushes them.
-        if (Array.isArray(data.variants)) {
-            const safeVariants = data.variants.map((v: any) => {
+        const variantsToPrice = Array.isArray(data.variants)
+            ? data.variants
+            : updatePayload.category !== undefined
+                ? existing.variants
+                : null;
+
+        if (Array.isArray(variantsToPrice)) {
+            const safeVariants = variantsToPrice.map((v: any) => {
                 const price = Number(v.price || 0);
                 const mrp = Number(v.mrp || 0);
                 let handlingCharges = Number(v.productHandlingCharges || 0);
+                let productHandling = Number(v.productHandling || handlingCharges);
                 let customerSellingPrice = Number(v.customerSellingPrice || price);
+                let variantAdditionalHandling = getDefaultAdditionalHandlingSnapshot();
+
+                if (price > 0 && mrp > 0 && price > mrp) {
+                    throw new Error("Selling price cannot exceed MRP");
+                }
 
                 if (price > 0 && mrp >= price) {
-                    try {
-                        const calculated = calculateProductHandling(price, mrp);
-                        handlingCharges = calculated.productHandlingCharges;
-                        customerSellingPrice = calculated.customerSellingPrice;
-                    } catch {
-                        // Keep fallback
-                    }
+                    const calculated = calculateProductHandling(price, mrp, additionalHandling);
+                    handlingCharges = calculated.productHandlingCharges;
+                    productHandling = calculated.productHandling;
+                    customerSellingPrice = calculated.customerSellingPrice;
+                    variantAdditionalHandling = calculated.additionalHandling;
                 } else if (price > 0 && !mrp) {
                     customerSellingPrice = price;
                 }
@@ -337,6 +399,7 @@ export class ProductService {
                     // Preserve _id so Mongoose doesn't regenerate it on replace
                     ...(v._id ? { _id: v._id } : {}),
 
+                    variantId: v.variantId,
                     attributes: v.attributes || {},
 
                     // Only keep images that are already on CDN (real URLs)
@@ -359,6 +422,8 @@ export class ProductService {
                     stock: Number(v.stock || 0),
                     productSpecification: v.productSpecification,
                     productHandlingCharges: handlingCharges,
+                    productHandling,
+                    additionalHandling: variantAdditionalHandling,
                     sku: v.sku,
                     price,
                     customerSellingPrice,

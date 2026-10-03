@@ -895,10 +895,6 @@ export class PaymentTransactionService {
             throw new Error("Order not found");
         }
 
-        const alreadyProcessed =
-            transaction.status === "success" &&
-            orderBefore.paymentStatus === "success";
-
         // These repository methods are idempotent. If the mobile callback and
         // Razorpay webhook arrive together, the payment/order is updated once.
         await this.repo.markSuccess(
@@ -906,10 +902,13 @@ export class PaymentTransactionService {
             razorpayPaymentId
         );
 
-        const updatedOrder: any = await this.repo.markOrderPaid(
+        const paidOrderResult: any = await this.repo.markOrderPaid(
             orderId.toString(),
             transaction._id.toString()
         );
+        const updatedOrder = paidOrderResult?.order;
+        const paymentStatusChanged = paidOrderResult?.paymentStatusChanged === true;
+        const alreadyProcessed = !paymentStatusChanged;
 
         // $pull is naturally safe to repeat and keeps the cart correct even if
         // an earlier request updated payment state but failed before cart cleanup.
@@ -920,7 +919,7 @@ export class PaymentTransactionService {
 
         // Avoid duplicate notifications on normal retries. The repository also
         // prevents duplicate payment tracking-history rows.
-        if (orderBefore.paymentStatus !== "success") {
+        if (paymentStatusChanged) {
             void Promise.allSettled([
                 this.sendOrderPaidNotificationToVendors(orderId),
                 this.sendOrderPaidNotificationToDrivers(orderId),
@@ -1359,7 +1358,7 @@ export class PaymentTransactionService {
                 parentOrder: parentOrderId,
                 isActive: true,
             })
-                .select("_id vendor orderNumber vendorOrderNumber totalAmount")
+                .select("_id vendor orderNumber vendorOrderNumber totalAmount status paymentStatus")
                 .lean();
 
             if (!vendorOrders || vendorOrders.length === 0) {
@@ -1367,42 +1366,52 @@ export class PaymentTransactionService {
                 return;
             }
 
-            const vendorIds = [
-                ...new Set(
-                    vendorOrders
-                        .map((item: any) => item?.vendor?.toString?.())
-                        .filter(Boolean)
-                ),
-            ];
+            const payableVendorOrders = vendorOrders.filter((vendorOrder: any) =>
+                vendorOrder?.vendor &&
+                vendorOrder?.paymentStatus === "success" &&
+                vendorOrder?.status === "placed"
+            );
 
-            if (vendorIds.length === 0) {
-                console.log("Vendor push skipped: vendor ids not found");
+            if (payableVendorOrders.length === 0) {
+                console.log("Vendor push skipped: no placed paid vendor orders found");
                 return;
             }
 
-            const firstVendorOrder = vendorOrders[0];
-
-            const title = "New paid order received";
-
-            const body = firstVendorOrder?.orderNumber
-                ? `Order ${firstVendorOrder.orderNumber} has been paid successfully. Please accept and process it.`
-                : "A new order has been paid successfully. Please accept and process it.";
-
             const failedVendorIds: string[] = [];
 
-            for (const vendorId of vendorIds) {
+            for (const vendorOrder of payableVendorOrders) {
+                const vendorId = vendorOrder.vendor?.toString?.();
+                const vendorOrderId = vendorOrder._id?.toString?.() || "";
+                const orderNumber = vendorOrder.orderNumber?.toString?.() || "";
+                const vendorOrderNumber = vendorOrder.vendorOrderNumber?.toString?.() || "";
+                const displayOrderNumber = vendorOrderNumber || orderNumber;
+
+                if (!vendorId) {
+                    continue;
+                }
+
                 try {
+                    const title = "New order received";
+                    const body = displayOrderNumber
+                        ? `New order ${displayOrderNumber} received. Payment successful.`
+                        : "A new order has been placed and payment was successful.";
+
                     await this.firebaseTokenService.sendNotificationToUser({
                         userId: vendorId,
                         title,
                         body,
                         data: {
-                            type: "ORDER_PAYMENT_SUCCESS",
+                            type: "NEW_VENDOR_ORDER",
+                            event: "PAYMENT_SUCCESS",
+                            eventType: "PAYMENT_SUCCESS",
                             screen: "VENDOR_ORDER_DETAILS",
+                            orderId: parentOrderId.toString(),
                             parentOrderId: parentOrderId.toString(),
-                            orderNumber:
-                                firstVendorOrder?.orderNumber?.toString?.() || "",
-                            vendorOrderCount: vendorOrders.length.toString(),
+                            vendorOrderId,
+                            orderNumber,
+                            vendorOrderNumber,
+                            status: "placed",
+                            paymentStatus: "success",
                             click_action: "FLUTTER_NOTIFICATION_CLICK",
                         },
                     });
@@ -1418,7 +1427,7 @@ export class PaymentTransactionService {
             }
 
             console.log("Vendor order payment push completed", {
-                totalVendors: vendorIds.length,
+                totalVendorOrders: payableVendorOrders.length,
                 failedVendors: failedVendorIds.length,
             });
         } catch (error: any) {

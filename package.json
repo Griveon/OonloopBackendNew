@@ -7,7 +7,8 @@
     "dev": "nodemon --watch src --exec tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "migrate:product-pricing": "tsx src/scripts/migrate-product-pricing.ts"
+    "migrate:product-pricing": "tsx src/scripts/migrate-product-pricing.ts",
+    "migrate:vendorcategory-additional-handling": "tsx src/scripts/migrate-vendorcategory-additional-handling.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1021.0",

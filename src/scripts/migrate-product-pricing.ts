@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
 import { ProductModel } from "../modules/product/models/product.model.js";
 import { calculateProductHandling } from "../modules/product/utils/pricing.util.js";
+import { VendorCategoryModel } from "../modules/vendorcategory/models/vendorcategory.model.js";
 
 interface MigrationOptions {
     dryRun: boolean;
@@ -46,6 +47,8 @@ const runProductPricingMigration = async (): Promise<void> => {
                 { productHandlingCharges: null },
                 { productHandling: { $exists: false } },
                 { productHandling: null },
+                { additionalHandling: { $exists: false } },
+                { "additionalHandling.amount": { $exists: false } },
                 { "variants.customerSellingPrice": { $exists: false } },
                 { "variants.customerSellingPrice": null },
                 { "variants.customerSellingPrice": { $lte: 0 } },
@@ -53,6 +56,8 @@ const runProductPricingMigration = async (): Promise<void> => {
                 { "variants.productHandlingCharges": null },
                 { "variants.productHandling": { $exists: false } },
                 { "variants.productHandling": null },
+                { "variants.additionalHandling": { $exists: false } },
+                { "variants.additionalHandling.amount": { $exists: false } },
             ],
         };
 
@@ -83,16 +88,40 @@ const runProductPricingMigration = async (): Promise<void> => {
         const batch = await ProductModel.find(query)
             .sort({ _id: 1 })
             .limit(batchSize)
-            .select("_id name price mrp customerSellingPrice productHandlingCharges productHandling variants")
+            .select("_id name price mrp customerSellingPrice productHandlingCharges productHandling variants category")
             .lean();
 
         if (batch.length === 0) {
             break;
         }
 
+        const categoryIds = [
+            ...new Set(
+                batch
+                    .map((product: any) => product.category?.toString())
+                    .filter(Boolean)
+            ),
+        ];
+
+        const categories = await VendorCategoryModel.find({
+            _id: { $in: categoryIds },
+        })
+            .select("_id additionalHandling")
+            .lean();
+
+        const categoryHandlingMap = new Map(
+            categories.map((category: any) => [
+                category._id.toString(),
+                category.additionalHandling,
+            ])
+        );
+
         for (const product of batch) {
             scannedCount++;
             lastId = product._id;
+
+            const additionalHandling =
+                categoryHandlingMap.get((product as any).category?.toString?.() || "") ?? null;
 
             const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
             let variantsUpdated = 0;
@@ -121,7 +150,7 @@ const runProductPricingMigration = async (): Promise<void> => {
                     }
 
                     try {
-                        const calc = calculateProductHandling(vPrice, vMrp);
+                        const calc = calculateProductHandling(vPrice, vMrp, additionalHandling);
                         updatedVariants.push({
                             ...v,
                             price: vPrice,
@@ -129,6 +158,7 @@ const runProductPricingMigration = async (): Promise<void> => {
                             productHandling: calc.productHandling,
                             productHandlingCharges: calc.productHandlingCharges,
                             customerSellingPrice: calc.customerSellingPrice,
+                            additionalHandling: calc.additionalHandling,
                         });
                         variantsUpdated++;
                     } catch (err: any) {
@@ -145,7 +175,7 @@ const runProductPricingMigration = async (): Promise<void> => {
 
             if (!isNaN(rootPrice) && rootPrice > 0 && !isNaN(rootMrp) && rootMrp > 0 && rootPrice <= rootMrp) {
                 try {
-                    rootCalculated = calculateProductHandling(rootPrice, rootMrp);
+                    rootCalculated = calculateProductHandling(rootPrice, rootMrp, additionalHandling);
                 } catch {
                     // Handled below
                 }
@@ -157,6 +187,7 @@ const runProductPricingMigration = async (): Promise<void> => {
                         productHandling: firstValidVariant.productHandling,
                         productHandlingCharges: firstValidVariant.productHandlingCharges,
                         customerSellingPrice: firstValidVariant.customerSellingPrice,
+                        additionalHandling: firstValidVariant.additionalHandling,
                     };
                 }
             }
@@ -186,6 +217,7 @@ const runProductPricingMigration = async (): Promise<void> => {
                 updateSet.productHandling = rootCalculated.productHandling;
                 updateSet.productHandlingCharges = rootCalculated.productHandlingCharges;
                 updateSet.customerSellingPrice = rootCalculated.customerSellingPrice;
+                updateSet.additionalHandling = rootCalculated.additionalHandling;
             }
 
             if (samples.length < 5) {

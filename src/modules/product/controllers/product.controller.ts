@@ -348,6 +348,7 @@ export class ProductController {
         try {
             const sellingPrice = req.body.sellingPrice ?? req.body.price;
             const mrp = req.body.mrp;
+            const categoryId = req.body.categoryId ?? req.body.category;
 
             if (sellingPrice === undefined || mrp === undefined) {
                 return res
@@ -355,7 +356,11 @@ export class ProductController {
                     .json(ResponseUtil.badRequest("sellingPrice and mrp are required"));
             }
 
-            const calculation = this.service.calculateHandling(sellingPrice, mrp);
+            const calculation = await this.service.calculateHandling(
+                sellingPrice,
+                mrp,
+                categoryId
+            );
 
             return res
                 .status(200)

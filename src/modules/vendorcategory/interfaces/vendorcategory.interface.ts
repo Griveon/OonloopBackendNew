@@ -8,10 +8,18 @@ export interface IImage {
     position?: number;
 }
 
+export interface IVendorCategoryAdditionalHandling {
+    enabled: boolean;
+    percentage: number;
+    maxAmount: number;
+}
+
 export interface IVendorCategory {
     name: string;
 
     icon?: IImage[];
+
+    additionalHandling?: IVendorCategoryAdditionalHandling;
 
     isActive: boolean;
 
