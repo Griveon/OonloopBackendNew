@@ -67,6 +67,11 @@ const orderItemSchema = new Schema(
             min: 0,
         },
 
+        customerSellingPrice: {
+            type: Number,
+            min: 0,
+        },
+
         mrp: {
             type: Number,
             min: 0,

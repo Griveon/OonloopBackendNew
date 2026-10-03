@@ -188,7 +188,18 @@ export class OrderService {
                 throw new Error(`Vendor not found for product ${item.product}`);
             }
 
-            const price = round(Number(item.price ?? product.price ?? 0));
+            let matchedVariant: any = null;
+            if (item.variant && Array.isArray(product.variants)) {
+                matchedVariant = product.variants.find(
+                    (v: any) => String(v._id) === String(item.variant)
+                );
+            }
+
+            const baseCustomerSellingPrice = matchedVariant
+                ? (matchedVariant.customerSellingPrice ?? matchedVariant.price)
+                : (product.customerSellingPrice ?? product.price ?? 0);
+
+            const price = round(Number(item.customerSellingPrice ?? item.price ?? baseCustomerSellingPrice));
 
             const mrp =
                 item.mrp !== undefined
@@ -219,6 +230,7 @@ export class OrderService {
                 name: item.name || product.name || product.productName || "Product",
                 sku: item.sku || product.sku,
                 price,
+                customerSellingPrice: price,
                 mrp,
                 quantity,
                 images: item.images || product.images || [],
@@ -646,6 +658,7 @@ export class OrderService {
                     name: item.name,
                     sku: item.sku,
                     price: item.price,
+                    customerSellingPrice: item.customerSellingPrice ?? item.price,
                     mrp: item.mrp,
                     quantity: item.quantity,
                     images: item.images,

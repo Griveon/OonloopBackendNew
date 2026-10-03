@@ -49,6 +49,7 @@ export interface IOrderItem {
     sku?: string;
 
     price: number;
+    customerSellingPrice?: number;
     mrp?: number;
 
     quantity: number;

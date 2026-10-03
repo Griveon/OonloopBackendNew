@@ -325,7 +325,7 @@ export class PreorderService {
             }
             const product: any = productMap.get(raw.productId);
 
-            let price = Number(product.mrp || 0);
+            let price = Number(product.customerSellingPrice ?? product.price ?? product.mrp ?? 0);
             let variantId: any;
             let variantLabel = "";
 
@@ -336,7 +336,7 @@ export class PreorderService {
                 if (!variant) {
                     throw new Error(`Variant not found: ${raw.variantId}`);
                 }
-                price = Number(variant.price ?? product.mrp ?? 0);
+                price = Number(variant.customerSellingPrice ?? variant.price ?? product.mrp ?? 0);
                 variantId = variant._id;
                 variantLabel = this.variantLabel(variant);
             }

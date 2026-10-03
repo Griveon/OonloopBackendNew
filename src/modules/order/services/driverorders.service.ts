@@ -921,7 +921,7 @@ export class DriverOrderService {
                     quantity: pickedQuantity,
                     total:
                         Math.round(
-                            Number(currentItem.price || 0) *
+                            Number((currentItem.customerSellingPrice ?? currentItem.price) || 0) *
                             pickedQuantity *
                             100
                         ) / 100,
@@ -960,6 +960,7 @@ export class DriverOrderService {
                     name: currentItem.name,
                     sku: currentItem.sku,
                     price: currentItem.price,
+                    customerSellingPrice: currentItem.customerSellingPrice ?? currentItem.price,
                     mrp: currentItem.mrp,
                     procurementPrice:
                         inputItem.procurementPrice === null ||
@@ -970,7 +971,7 @@ export class DriverOrderService {
                     images: currentItem.images || [],
                     total:
                         Math.round(
-                            Number(currentItem.price || 0) *
+                            Number((currentItem.customerSellingPrice ?? currentItem.price) || 0) *
                             shortQuantity *
                             100
                         ) / 100,
@@ -1204,7 +1205,7 @@ export class DriverOrderService {
                     quantity: pickedQuantity,
                     total:
                         Math.round(
-                            Number(plainParentItem.price || 0) *
+                            Number((plainParentItem.customerSellingPrice ?? plainParentItem.price) || 0) *
                             pickedQuantity *
                             100
                         ) / 100,
@@ -1234,7 +1235,7 @@ export class DriverOrderService {
                         quantity: shortQuantity,
                         total:
                             Math.round(
-                                Number(plainParentItem.price || 0) *
+                                Number((plainParentItem.customerSellingPrice ?? plainParentItem.price) || 0) *
                                 shortQuantity *
                                 100
                             ) / 100,
@@ -1257,7 +1258,7 @@ export class DriverOrderService {
                         quantity: shortQuantity,
                         total:
                             Math.round(
-                                Number(plainParentItem.price || 0) *
+                                Number((plainParentItem.customerSellingPrice ?? plainParentItem.price) || 0) *
                                 shortQuantity *
                                 100
                             ) / 100,

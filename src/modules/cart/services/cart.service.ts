@@ -80,7 +80,7 @@ export class CartService {
         const product: any = await ProductModel.findById(productId);
         if (!product) throw new Error("Product not found");
 
-        let price = product.mrp;
+        let price = product.customerSellingPrice ?? product.price ?? product.mrp;
         let name = product.name;
         let image = product.images?.[0]?.url;
 
@@ -88,7 +88,7 @@ export class CartService {
             const variant = product.variants.id(variantId);
             if (!variant) throw new Error("Variant not found");
 
-            price = variant.price || price;
+            price = variant.customerSellingPrice ?? variant.price ?? price;
             image = variant.images?.[0]?.url || image;
         }
 
@@ -102,7 +102,8 @@ export class CartService {
 
         if (existingItem) {
             existingItem.quantity += quantity;
-            existingItem.total = existingItem.price * existingItem.quantity;
+            const unitPrice = existingItem.customerSellingPrice ?? existingItem.price;
+            existingItem.total = unitPrice * existingItem.quantity;
             cartItem = existingItem;
         } else {
             cartItem = {
@@ -110,6 +111,7 @@ export class CartService {
                 variant: variantId,
                 quantity,
                 price,
+                customerSellingPrice: price,
                 name,
                 image,
                 total: price * quantity,
@@ -152,7 +154,8 @@ export class CartService {
         }
 
         item.quantity = quantity;
-        item.total = item.price * quantity;
+        const unitPrice = item.customerSellingPrice ?? item.price;
+        item.total = unitPrice * quantity;
 
         await this.repo.save(cart);
 

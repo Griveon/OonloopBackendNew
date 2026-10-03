@@ -3,12 +3,17 @@ import type { IProduct } from "../interfaces/product.interface.js";
 import { ProductModel } from "../models/product.model.js";
 import slugify from "slugify";
 import { CartModel } from "../../cart/models/cart.model.js";
+import { calculateProductHandling } from "../utils/pricing.util.js";
 
 export class ProductService {
     private repo: ProductRepository;
 
     constructor() {
         this.repo = new ProductRepository();
+    }
+
+    calculateHandling(sellingPrice: number | string, mrp: number | string) {
+        return calculateProductHandling(sellingPrice, mrp);
     }
 
 
@@ -73,23 +78,43 @@ export class ProductService {
         // 3️⃣ CLEAN VARIANTS
         // =========================================================
         const safeVariants = Array.isArray(data.variants)
-            ? data.variants.map((v: any) => ({
-                ...(v._id ? { _id: v._id } : {}),
+            ? data.variants.map((v: any) => {
+                const price = Number(v.price || 0);
+                const mrp = Number(v.mrp || 0);
+                let handlingCharges = Number(v.productHandlingCharges || 0);
+                let customerSellingPrice = Number(v.customerSellingPrice || price);
 
-                variantId: v.variantId,
-                attributes: v.attributes || {},
+                if (price > 0 && mrp >= price) {
+                    try {
+                        const calculated = calculateProductHandling(price, mrp);
+                        handlingCharges = calculated.productHandlingCharges;
+                        customerSellingPrice = calculated.customerSellingPrice;
+                    } catch {
+                        // Keep fallback
+                    }
+                } else if (price > 0 && !mrp) {
+                    customerSellingPrice = price;
+                }
 
-                unit: v.unit,
-                unitValue: Number(v.unitValue || 0),
-                stock: Number(v.stock || 0),
-                sku: v.sku,
-                price: Number(v.price || 0),
-                mrp: Number(v.mrp || 0),
-                productSpecification: v.productSpecification,
-                productHandlingCharges: v.productHandlingCharges,
-                // Images handled by upload API
-                images: [],
-            }))
+                return {
+                    ...(v._id ? { _id: v._id } : {}),
+
+                    variantId: v.variantId,
+                    attributes: v.attributes || {},
+
+                    unit: v.unit,
+                    unitValue: Number(v.unitValue || 0),
+                    stock: Number(v.stock || 0),
+                    sku: v.sku,
+                    price,
+                    customerSellingPrice,
+                    mrp,
+                    productSpecification: v.productSpecification,
+                    productHandlingCharges: handlingCharges,
+                    // Images handled by upload API
+                    images: [],
+                };
+            })
             : [];
 
         // =========================================================
@@ -102,6 +127,22 @@ export class ProductService {
         // =========================================================
         // 5️⃣ BUILD FINAL PRODUCT
         // =========================================================
+        let rootCustomerSellingPrice = data.customerSellingPrice;
+        if (data.price !== undefined && data.price !== null) {
+            const rootPrice = Number(data.price || 0);
+            const rootMrp = Number(data.mrp || 0);
+            if (rootPrice > 0 && rootMrp >= rootPrice) {
+                try {
+                    const calc = calculateProductHandling(rootPrice, rootMrp);
+                    rootCustomerSellingPrice = calc.customerSellingPrice;
+                } catch {
+                    rootCustomerSellingPrice = rootPrice;
+                }
+            } else {
+                rootCustomerSellingPrice = rootPrice;
+            }
+        }
+
         const productPayload = {
             ...data,
 
@@ -114,6 +155,7 @@ export class ProductService {
             images: safeImages,
             videos: safeVideos,
             variants: safeVariants,
+            ...(rootCustomerSellingPrice !== undefined ? { customerSellingPrice: rootCustomerSellingPrice } : {}),
         };
 
         console.log("📦 Final Product Payload Availability:", productPayload.availability);
@@ -156,8 +198,19 @@ export class ProductService {
             }
         }
 
+        const productObj = (product as any).toObject ? (product as any).toObject() : product;
+        if (productObj.customerSellingPrice === undefined && productObj.price !== undefined) {
+            productObj.customerSellingPrice = productObj.price;
+        }
+        if (Array.isArray(productObj.variants)) {
+            productObj.variants = productObj.variants.map((v: any) => ({
+                ...v,
+                customerSellingPrice: v.customerSellingPrice ?? v.price,
+            }));
+        }
+
         return {
-            ...product.toObject(),
+            ...productObj,
             cart: cartInfo,
         };
     }
@@ -194,6 +247,21 @@ export class ProductService {
         delete updatePayload.images;
         delete updatePayload.videos;
         delete updatePayload.variants;
+
+        if (updatePayload.price !== undefined) {
+            const rootPrice = Number(updatePayload.price || 0);
+            const rootMrp = Number(updatePayload.mrp ?? existing.mrp ?? 0);
+            if (rootPrice > 0 && rootMrp >= rootPrice) {
+                try {
+                    const calc = calculateProductHandling(rootPrice, rootMrp);
+                    updatePayload.customerSellingPrice = calc.customerSellingPrice;
+                } catch {
+                    updatePayload.customerSellingPrice = rootPrice;
+                }
+            } else {
+                updatePayload.customerSellingPrice = rootPrice;
+            }
+        }
 
         // 1️⃣ UPDATE SCALAR FIELDS ONLY
         if (Object.keys(updatePayload).length > 0) {
@@ -247,36 +315,56 @@ export class ProductService {
         // 4️⃣ VARIANTS → replace scalar fields + preserve/filter existing images only.
         //    New variant images arrive via /upload/variant-image which $pushes them.
         if (Array.isArray(data.variants)) {
-            const safeVariants = data.variants.map((v: any) => ({
-                // Preserve _id so Mongoose doesn't regenerate it on replace
-                ...(v._id ? { _id: v._id } : {}),
+            const safeVariants = data.variants.map((v: any) => {
+                const price = Number(v.price || 0);
+                const mrp = Number(v.mrp || 0);
+                let handlingCharges = Number(v.productHandlingCharges || 0);
+                let customerSellingPrice = Number(v.customerSellingPrice || price);
 
-                attributes: v.attributes || {},
+                if (price > 0 && mrp >= price) {
+                    try {
+                        const calculated = calculateProductHandling(price, mrp);
+                        handlingCharges = calculated.productHandlingCharges;
+                        customerSellingPrice = calculated.customerSellingPrice;
+                    } catch {
+                        // Keep fallback
+                    }
+                } else if (price > 0 && !mrp) {
+                    customerSellingPrice = price;
+                }
 
-                // Only keep images that are already on CDN (real URLs)
-                // New ones will be $pushed by the upload endpoint after this returns
-                images: (v.images || [])
-                    .filter((img: any) => {
-                        const url = img.url || img.uri || "";
-                        return url.startsWith("http");
-                    })
-                    .map((img: any) => ({
-                        url: img.url || img.uri,
-                        name: img.name || "",
-                        alt: img.alt || "",
-                        isPrimary: img.isPrimary || false,
-                        position: img.position || 0,
-                    })),
+                return {
+                    // Preserve _id so Mongoose doesn't regenerate it on replace
+                    ...(v._id ? { _id: v._id } : {}),
 
-                unit: v.unit,
-                unitValue: Number(v.unitValue || 0),
-                stock: Number(v.stock || 0),
-                productSpecification: v.productSpecification,
-                productHandlingCharges: v.productHandlingCharges,
-                sku: v.sku,
-                price: Number(v.price || 0),
-                mrp: Number(v.mrp || 0),
-            }));
+                    attributes: v.attributes || {},
+
+                    // Only keep images that are already on CDN (real URLs)
+                    // New ones will be $pushed by the upload endpoint after this returns
+                    images: (v.images || [])
+                        .filter((img: any) => {
+                            const url = img.url || img.uri || "";
+                            return url.startsWith("http");
+                        })
+                        .map((img: any) => ({
+                            url: img.url || img.uri,
+                            name: img.name || "",
+                            alt: img.alt || "",
+                            isPrimary: img.isPrimary || false,
+                            position: img.position || 0,
+                        })),
+
+                    unit: v.unit,
+                    unitValue: Number(v.unitValue || 0),
+                    stock: Number(v.stock || 0),
+                    productSpecification: v.productSpecification,
+                    productHandlingCharges: handlingCharges,
+                    sku: v.sku,
+                    price,
+                    customerSellingPrice,
+                    mrp,
+                };
+            });
 
             await ProductModel.updateOne(
                 { _id: id },

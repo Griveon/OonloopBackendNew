@@ -7,6 +7,7 @@ export interface ICartItem {
     quantity: number;
 
     price: number;          
+    customerSellingPrice?: number;
     mrp?: number;           
 
     name: string;           

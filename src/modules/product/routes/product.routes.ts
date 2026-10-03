@@ -133,6 +133,12 @@ productRoutes.put(
     controller.update
 );
 
+productRoutes.post(
+    "/calculatehandling",
+    authMiddleware,
+    controller.calculateHandling
+);
+
 /**
  * ============================================================
  * EXISTING MEDIA UPLOAD FLOW

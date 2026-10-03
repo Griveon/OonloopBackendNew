@@ -29,20 +29,34 @@ export class VendorProductDetailsRepository {
             throw new Error("Product not found");
         }
 
+        const normalizedProduct: any = {
+            ...product,
+            customerSellingPrice: (product as any).customerSellingPrice ?? (product as any).price,
+            variants: Array.isArray((product as any).variants)
+                ? (product as any).variants.map((v: any) => ({
+                    ...v,
+                    customerSellingPrice: v.customerSellingPrice ?? v.price,
+                }))
+                : (product as any).variants,
+        };
+
         // Related products
-        const relatedProducts = await ProductModel.find({
+        const relatedProducts = (await ProductModel.find({
             vendorId: new mongoose.Types.ObjectId(vendorId),
             category: product.category?._id,
             _id: { $ne: product._id },
             isActive: true,
         })
             .limit(10)
-            .select("name images mrp stock")
-            .lean();
+            .select("name images mrp stock price customerSellingPrice")
+            .lean()).map((p: any) => ({
+                ...p,
+                customerSellingPrice: p.customerSellingPrice ?? p.price,
+            }));
 
         return {
             vendor,
-            product,
+            product: normalizedProduct,
             relatedProducts,
         };
     }

@@ -31,14 +31,14 @@ export class WishlistService {
 
         let name = product.name;
         let image = product.images?.[0]?.url;
-        let price = product.mrp;
+        let price = product.customerSellingPrice ?? product.price ?? product.mrp;
 
         if (variantId) {
             const variant = product.variants.id(variantId);
             if (!variant) throw new Error("Variant not found");
 
             image = variant.images?.[0]?.url || image;
-            price = variant.price || price;
+            price = variant.customerSellingPrice ?? variant.price ?? price;
         }
 
         const exists = wishlist.items.find(

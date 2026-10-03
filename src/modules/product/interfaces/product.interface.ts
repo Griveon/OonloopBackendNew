@@ -9,9 +9,11 @@ export interface IProductVariant {
     stock?: number;
     sku?: string;
     price?: number;
+    customerSellingPrice?: number;
     mrp?: number;
     productSpecification?: any;
     productHandlingCharges?: any;
+    productHandling?: number;
 }
 export interface IProductVideo {
     productId?: Types.ObjectId;
@@ -65,6 +67,10 @@ export interface IProduct {
     images: IProductImage[];
     videos: IProductVideo[],
     mrp?: number;
+    price?: number;
+    customerSellingPrice?: number;
+    productHandlingCharges?: number;
+    productHandling?: number;
     stock?: number;
     isActive?: boolean;
     isFeatured?: boolean;

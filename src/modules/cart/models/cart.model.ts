@@ -24,6 +24,10 @@ const cartItemSchema = new Schema<ICartItem>(
             required: true,
         },
 
+        customerSellingPrice: {
+            type: Number,
+        },
+
         mrp: {
             type: Number,
         },
@@ -92,7 +96,7 @@ cartSchema.pre("save", async function (this: ICartDocument) {
     );
 
     this.subTotal = this.items.reduce(
-        (sum, i) => sum + i.price * i.quantity,
+        (sum, i) => sum + Number(i.customerSellingPrice ?? i.price ?? 0) * i.quantity,
         0
     );
 

@@ -90,6 +90,7 @@ export interface IOrderVendorItem {
      * This remains unchanged even when sourced from an outside vendor.
      */
     price: number;
+    customerSellingPrice?: number;
     mrp?: number;
 
     /**

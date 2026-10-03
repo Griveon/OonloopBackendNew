@@ -90,9 +90,9 @@ export class OrderSummuryService {
                     );
                 }
 
-                price = variant.price ?? product.mrp ?? 0;
+                price = variant.customerSellingPrice ?? variant.price ?? product.mrp ?? 0;
             } else {
-                price = product.mrp ?? 0;
+                price = product.customerSellingPrice ?? product.price ?? product.mrp ?? 0;
             }
 
             const itemTotal = price * qty;
@@ -128,6 +128,7 @@ export class OrderSummuryService {
                     ? {
                         _id: variant._id,
                         price: variant.price,
+                        customerSellingPrice: variant.customerSellingPrice ?? variant.price,
                         unitValue: variant.unitValue,
                         stock: variant.stock,
                         attributes: variant.attributes,
@@ -136,6 +137,7 @@ export class OrderSummuryService {
 
                 mrp: product.mrp,
                 price,
+                customerSellingPrice: price,
                 qty,
 
                 couponCode: item.couponCode

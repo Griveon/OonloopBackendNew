@@ -343,4 +343,27 @@ export class ProductController {
             );
         }
     };
+
+    calculateHandling = async (req: Request, res: Response) => {
+        try {
+            const sellingPrice = req.body.sellingPrice ?? req.body.price;
+            const mrp = req.body.mrp;
+
+            if (sellingPrice === undefined || mrp === undefined) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("sellingPrice and mrp are required"));
+            }
+
+            const calculation = this.service.calculateHandling(sellingPrice, mrp);
+
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Product handling calculated successfully", calculation));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
 }

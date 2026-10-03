@@ -101,6 +101,7 @@ export class MinimalNearbyProductsByCategoriesRepository {
                             _id: "$_id",
                             name: "$name",
                             price: "$price",
+                            customerSellingPrice: { $ifNull: ["$customerSellingPrice", "$price"] },
                             mrp: "$mrp",
                             images: "$images",
                             vendorId: "$vendorId",

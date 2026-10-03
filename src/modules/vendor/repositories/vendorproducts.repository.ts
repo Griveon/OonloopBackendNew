@@ -85,6 +85,13 @@ export class VendorProductsRepository {
         const productsWithAvailability = products.map(
             (product: any) => ({
                 ...product,
+                customerSellingPrice: product.customerSellingPrice ?? product.price,
+                variants: Array.isArray(product.variants)
+                    ? product.variants.map((v: any) => ({
+                        ...v,
+                        customerSellingPrice: v.customerSellingPrice ?? v.price,
+                    }))
+                    : product.variants,
                 isAvailableNow: isProductAvailableNow(
                     product.availability
                 ),

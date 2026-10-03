@@ -868,7 +868,7 @@ export class PaymentTransactionService {
 
         cart.subTotal = cart.items.reduce(
             (sum, item) =>
-                sum + Number(item.price || 0) * Number(item.quantity || 0),
+                sum + Number(item.customerSellingPrice ?? item.price ?? 0) * Number(item.quantity || 0),
             0
         );
 

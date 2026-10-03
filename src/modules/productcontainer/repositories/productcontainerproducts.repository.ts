@@ -90,9 +90,20 @@ export class ProductContainerProductsRepository {
                 ProductModel.countDocuments(match),
             ]);
 
+        const normalizedProducts = products.map((product: any) => ({
+            ...product,
+            customerSellingPrice: product.customerSellingPrice ?? product.price,
+            variants: Array.isArray(product.variants)
+                ? product.variants.map((v: any) => ({
+                    ...v,
+                    customerSellingPrice: v.customerSellingPrice ?? v.price,
+                }))
+                : product.variants,
+        }));
+
         return {
             container,
-            products,
+            products: normalizedProducts,
             total,
         };
     }
