@@ -1,5 +1,12 @@
 import { AppVersionRepository } from "../repositories/appversion.repository.js";
-import type { AppPlatform } from "../interfaces/appversion.interface.js";
+import { AppPlatform } from "../constants/appversion.constant.js";
+import type {
+    IAppVersion,
+    IAppVersionCheckQuery,
+    IAppVersionCheckResponse,
+    IAppVersionDocument,
+} from "../interfaces/appversion.interface.js";
+import { AppError } from "../../../utils/appError.js";
 
 export class AppVersionService {
     private repository: AppVersionRepository;
@@ -8,214 +15,116 @@ export class AppVersionService {
         this.repository = new AppVersionRepository();
     }
 
-    private validatePlatform(platform: string): AppPlatform {
-        if (!platform) {
-            throw new Error("Platform is required");
-        }
+    /**
+     * Check if an app update is available or required for the client platform & build.
+     * Uses build number as the primary comparison.
+     */
+    async checkVersion(query: IAppVersionCheckQuery): Promise<IAppVersionCheckResponse> {
+        const { platform, buildNumber: currentBuild } = query;
 
-        if (!["android", "ios"].includes(platform)) {
-            throw new Error("Invalid platform");
-        }
+        const config = await this.repository.findActiveByPlatform(platform);
 
-        return platform as AppPlatform;
-    }
-
-    async createOrUpdate(payload: any) {
-        const platform = this.validatePlatform(payload.platform);
-
-        const latestVersionCode = Number(payload.latestVersionCode);
-        const minimumVersionCode = Number(payload.minimumVersionCode || payload.latestVersionCode);
-
-        if (!latestVersionCode || latestVersionCode < 1) {
-            throw new Error("Latest version code is required");
-        }
-
-        if (!payload.latestVersionName) {
-            throw new Error("Latest version name is required");
-        }
-
-        if (!minimumVersionCode || minimumVersionCode < 1) {
-            throw new Error("Minimum version code is required");
-        }
-
-        const data = {
-            latestVersionCode,
-            latestVersionName: String(payload.latestVersionName).trim(),
-
-            minimumVersionCode,
-
-            forceUpdate: Boolean(payload.forceUpdate),
-
-            updateTitle:
-                payload.updateTitle ||
-                "Update Available",
-
-            updateMessage:
-                payload.updateMessage ||
-                "A new version of the app is available. Please update to continue.",
-
-            playStoreUrl:
-                payload.playStoreUrl ||
-                "",
-
-            appStoreUrl:
-                payload.appStoreUrl ||
-                "",
-
-            isActive:
-                typeof payload.isActive === "boolean"
-                    ? payload.isActive
-                    : true,
-        };
-
-        return await this.repository.createOrUpdate(platform, data);
-    }
-
-    async checkVersion(payload: {
-        platform: string;
-        versionCode: string | number;
-    }) {
-        const platform = this.validatePlatform(payload.platform);
-
-        const currentVersionCode = Number(payload.versionCode);
-
-        if (!currentVersionCode || currentVersionCode < 1) {
-            throw new Error("Current version code is required");
-        }
-
-        const appVersion = await this.repository.findByPlatform(platform);
-
-        if (!appVersion) {
+        if (!config) {
             return {
                 updateAvailable: false,
                 forceUpdate: false,
-                message: "No app version configuration found",
+                latestVersion: query.version || "1.0.0",
+                latestBuildNumber: currentBuild,
+                message: "App is running the latest available version.",
             };
         }
 
-        const latestVersionCode = Number(appVersion.latestVersionCode);
-        const minimumVersionCode = Number(appVersion.minimumVersionCode);
+        const latestBuild = config.latestBuildNumber;
+        const minimumSupportedBuild = config.minimumSupportedBuildNumber;
 
-        const updateAvailable = latestVersionCode > currentVersionCode;
+        // Primary comparison: current build vs latest build
+        const updateAvailable = currentBuild < latestBuild;
+        let forceUpdate = false;
 
-        const forceUpdate =
-            Boolean(appVersion.forceUpdate) ||
-            currentVersionCode < minimumVersionCode;
+        if (updateAvailable) {
+            // Force update if below minimum supported build OR if stored forceUpdate flag is true
+            if (currentBuild < minimumSupportedBuild || Boolean(config.forceUpdate)) {
+                forceUpdate = true;
+            }
+        }
 
-        const storeUrl =
-            platform === "android"
-                ? appVersion.playStoreUrl
-                : appVersion.appStoreUrl;
-
-        return {
-            platform: appVersion.platform,
-
-            currentVersionCode,
-
-            latestVersionCode: appVersion.latestVersionCode,
-            latestVersionName: appVersion.latestVersionName,
-
-            minimumVersionCode: appVersion.minimumVersionCode,
-
+        // Return only frontend-required data
+        const response: IAppVersionCheckResponse = {
             updateAvailable,
-            forceUpdate: updateAvailable ? forceUpdate : false,
-
-            updateTitle: appVersion.updateTitle,
-            updateMessage: appVersion.updateMessage,
-
-            storeUrl,
-            playStoreUrl: appVersion.playStoreUrl,
-            appStoreUrl: appVersion.appStoreUrl,
-
-            isActive: appVersion.isActive,
+            forceUpdate,
+            latestVersion: config.latestVersion,
+            latestBuildNumber: config.latestBuildNumber,
         };
+
+        if (config.storeUrl) {
+            response.storeUrl = config.storeUrl;
+        }
+
+        if (config.message) {
+            response.message = config.message;
+        }
+
+        if (config.maintenanceMode) {
+            response.maintenanceMode = config.maintenanceMode;
+        }
+
+        return response;
     }
 
-    async getAll() {
-        return await this.repository.getAll();
+    /**
+     * Admin: Create or update version configuration for a specific platform.
+     */
+    async upsertPlatformConfig(
+        platform: AppPlatform,
+        payload: Partial<IAppVersion>
+    ): Promise<IAppVersionDocument> {
+        if (!Object.values(AppPlatform).includes(platform)) {
+            throw new AppError(
+                `Invalid platform: "${platform}". Supported platforms are: ${Object.values(AppPlatform).join(", ")}`,
+                400
+            );
+        }
+
+        if (
+            payload.minimumSupportedBuildNumber !== undefined &&
+            payload.latestBuildNumber !== undefined &&
+            payload.minimumSupportedBuildNumber > payload.latestBuildNumber
+        ) {
+            throw new AppError(
+                "minimumSupportedBuildNumber cannot be greater than latestBuildNumber",
+                400
+            );
+        }
+
+        return await this.repository.upsertByPlatform(platform, payload);
     }
 
-    async getById(id: any) {
-        if (!id) {
-            throw new Error("App version id is required");
+    /**
+     * Admin: Get configuration for a specific platform.
+     */
+    async getConfigByPlatform(platform: AppPlatform): Promise<IAppVersionDocument> {
+        const config = await this.repository.findByPlatform(platform);
+        if (!config) {
+            throw new AppError(`No version configuration found for platform "${platform}"`, 404);
         }
-
-        const data = await this.repository.getById(id);
-
-        if (!data) {
-            throw new Error("App version not found");
-        }
-
-        return data;
+        return config;
     }
 
-    async updateById(id: any, payload: any) {
-        if (!id) {
-            throw new Error("App version id is required");
-        }
-
-        const updatePayload: any = {};
-
-        if (payload.platform) {
-            updatePayload.platform = this.validatePlatform(payload.platform);
-        }
-
-        if (payload.latestVersionCode !== undefined) {
-            updatePayload.latestVersionCode = Number(payload.latestVersionCode);
-        }
-
-        if (payload.latestVersionName !== undefined) {
-            updatePayload.latestVersionName = String(payload.latestVersionName).trim();
-        }
-
-        if (payload.minimumVersionCode !== undefined) {
-            updatePayload.minimumVersionCode = Number(payload.minimumVersionCode);
-        }
-
-        if (payload.forceUpdate !== undefined) {
-            updatePayload.forceUpdate = Boolean(payload.forceUpdate);
-        }
-
-        if (payload.updateTitle !== undefined) {
-            updatePayload.updateTitle = String(payload.updateTitle).trim();
-        }
-
-        if (payload.updateMessage !== undefined) {
-            updatePayload.updateMessage = String(payload.updateMessage).trim();
-        }
-
-        if (payload.playStoreUrl !== undefined) {
-            updatePayload.playStoreUrl = String(payload.playStoreUrl).trim();
-        }
-
-        if (payload.appStoreUrl !== undefined) {
-            updatePayload.appStoreUrl = String(payload.appStoreUrl).trim();
-        }
-
-        if (payload.isActive !== undefined) {
-            updatePayload.isActive = Boolean(payload.isActive);
-        }
-
-        const data = await this.repository.updateById(id, updatePayload);
-
-        if (!data) {
-            throw new Error("App version not found");
-        }
-
-        return data;
+    /**
+     * Admin: Get all platform configurations.
+     */
+    async getAllConfigs(): Promise<IAppVersionDocument[]> {
+        return await this.repository.findAll();
     }
 
-    async deleteById(id: any) {
-        if (!id) {
-            throw new Error("App version id is required");
+    /**
+     * Admin: Delete configuration for a specific platform.
+     */
+    async deleteConfigByPlatform(platform: AppPlatform): Promise<IAppVersionDocument> {
+        const deleted = await this.repository.deleteByPlatform(platform);
+        if (!deleted) {
+            throw new AppError(`No version configuration found for platform "${platform}"`, 404);
         }
-
-        const data = await this.repository.deleteById(id);
-
-        if (!data) {
-            throw new Error("App version not found");
-        }
-
-        return data;
+        return deleted;
     }
 }

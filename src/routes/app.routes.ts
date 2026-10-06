@@ -40,8 +40,7 @@ import personalShopperRoutes from "../modules/personalshopper/routes/personalsho
 import buyForMeRoutes from "../modules/buyforme/routes/buyforme.routes.js";
 import userPreferenceRoutes from "../modules/userpreference/routes/userprefrence.routes.js";
 import preorderRoutes from "../modules/preorder/routes/preorder.routes.js";
-
-userAuthRoutes
+import appVersionRoutes from "../modules/appversions/routes/appversion.routes.js";
 
 const router = Router();
 
@@ -140,6 +139,6 @@ router.use("/buyforme", buyForMeRoutes);
 
 router.use("/preorder", preorderRoutes);
 
-
+router.use("/appversion", appVersionRoutes);
 
 export default router;

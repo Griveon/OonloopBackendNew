@@ -1,68 +1,74 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { IAppVersionDocument } from "../interfaces/appversion.interface.js";
+import { AppPlatform } from "../constants/appversion.constant.js";
 
 const AppVersionSchema: Schema<IAppVersionDocument> = new Schema(
     {
         platform: {
             type: String,
-            enum: ["android", "ios"],
+            enum: Object.values(AppPlatform),
             required: true,
-            unique: true,
-            index: true,
+            trim: true,
+            lowercase: true,
         },
-
-        latestVersionCode: {
-            type: Number,
-            required: true,
-            min: 1,
-        },
-
-        latestVersionName: {
+        latestVersion: {
             type: String,
             required: true,
             trim: true,
         },
-
-        minimumVersionCode: {
+        latestBuildNumber: {
             type: Number,
             required: true,
             min: 1,
-            default: 1,
         },
-
+        minimumSupportedVersion: {
+            type: String,
+            required: true,
+            trim: true,
+        },
+        minimumSupportedBuildNumber: {
+            type: Number,
+            required: true,
+            min: 1,
+        },
         forceUpdate: {
             type: Boolean,
             default: false,
         },
-
-        updateTitle: {
-            type: String,
-            default: "Update Available",
-            trim: true,
-        },
-
-        updateMessage: {
-            type: String,
-            default: "A new version of the app is available. Please update to continue.",
-            trim: true,
-        },
-
-        playStoreUrl: {
+        storeUrl: {
             type: String,
             default: "",
             trim: true,
         },
-
-        appStoreUrl: {
+        message: {
             type: String,
             default: "",
             trim: true,
         },
-
         isActive: {
             type: Boolean,
             default: true,
             index: true,
+        },
+
+        // Extensible optional fields for future roadmap
+        maintenanceMode: {
+            type: Boolean,
+            default: false,
+        },
+        recommendedUpdate: {
+            type: Boolean,
+            default: false,
+        },
+        rolloutPercentage: {
+            type: Number,
+            min: 0,
+            max: 100,
+            default: 100,
+        },
+        deprecatedBuilds: {
+            type: [Number],
+            default: [],
         },
     },
     {
@@ -70,8 +76,17 @@ const AppVersionSchema: Schema<IAppVersionDocument> = new Schema(
     }
 );
 
+// Enforce that only one active configuration exists per platform
+AppVersionSchema.index(
+    { platform: 1 },
+    {
+        unique: true,
+        partialFilterExpression: { isActive: true },
+    }
+);
+
+// Compound index for querying active version config by platform
+AppVersionSchema.index({ platform: 1, isActive: 1 });
+
 export const AppVersionModel: Model<IAppVersionDocument> =
-    mongoose.model<IAppVersionDocument>(
-        "AppVersion",
-        AppVersionSchema
-    );
+    mongoose.model<IAppVersionDocument>("AppVersion", AppVersionSchema);

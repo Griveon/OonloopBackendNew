@@ -1,62 +1,81 @@
 import { AppVersionModel } from "../models/appversion.model.js";
-import type { AppPlatform } from "../interfaces/appversion.interface.js";
+import type { IAppVersion, IAppVersionDocument } from "../interfaces/appversion.interface.js";
+import { AppPlatform } from "../constants/appversion.constant.js";
 
 export class AppVersionRepository {
-    async createOrUpdate(platform: AppPlatform, payload: any) {
-        return await AppVersionModel.findOneAndUpdate(
+    /**
+     * Find active configuration for a platform (used by public check API)
+     */
+    async findActiveByPlatform(platform: AppPlatform): Promise<IAppVersionDocument | null> {
+        return await AppVersionModel.findOne({
+            platform,
+            isActive: true,
+        }).lean<IAppVersionDocument>();
+    }
+
+    /**
+     * Find configuration for a platform (used by admin API)
+     */
+    async findByPlatform(platform: AppPlatform): Promise<IAppVersionDocument | null> {
+        return await AppVersionModel.findOne({ platform });
+    }
+
+    /**
+     * Upsert configuration for a platform.
+     * Enforces single active configuration per platform.
+     */
+    async upsertByPlatform(
+        platform: AppPlatform,
+        payload: Partial<IAppVersion>
+    ): Promise<IAppVersionDocument> {
+        const isActive = payload.isActive !== false;
+
+        // If activating, deactivate other existing active records for this platform if any
+        if (isActive) {
+            await AppVersionModel.updateMany(
+                { platform, isActive: true },
+                { $set: { isActive: false } }
+            );
+        }
+
+        const updated = await AppVersionModel.findOneAndUpdate(
             { platform },
             {
                 $set: {
+                    ...payload,
                     platform,
-                    latestVersionCode: payload.latestVersionCode,
-                    latestVersionName: payload.latestVersionName,
-                    minimumVersionCode: payload.minimumVersionCode,
-                    forceUpdate: payload.forceUpdate,
-                    updateTitle: payload.updateTitle,
-                    updateMessage: payload.updateMessage,
-                    playStoreUrl: payload.playStoreUrl,
-                    appStoreUrl: payload.appStoreUrl,
-                    isActive: payload.isActive,
+                    isActive,
                 },
             },
             {
                 new: true,
                 upsert: true,
                 runValidators: true,
+                setDefaultsOnInsert: true,
             }
         );
+
+        return updated;
     }
 
-    async findByPlatform(platform: AppPlatform) {
-        return await AppVersionModel.findOne({
-            platform,
-            isActive: true,
-        });
+    /**
+     * Get all platform configurations (for admin dashboard)
+     */
+    async findAll(): Promise<IAppVersionDocument[]> {
+        return await AppVersionModel.find().sort({ platform: 1, createdAt: -1 });
     }
 
-    async getAll() {
-        return await AppVersionModel.find()
-            .sort({ createdAt: -1 });
-    }
-
-    async getById(id: string) {
+    /**
+     * Get configuration by ID
+     */
+    async findById(id: string): Promise<IAppVersionDocument | null> {
         return await AppVersionModel.findById(id);
     }
 
-    async updateById(id: string, payload: any) {
-        return await AppVersionModel.findByIdAndUpdate(
-            id,
-            {
-                $set: payload,
-            },
-            {
-                new: true,
-                runValidators: true,
-            }
-        );
-    }
-
-    async deleteById(id: string) {
-        return await AppVersionModel.findByIdAndDelete(id);
+    /**
+     * Delete configuration by platform
+     */
+    async deleteByPlatform(platform: AppPlatform): Promise<IAppVersionDocument | null> {
+        return await AppVersionModel.findOneAndDelete({ platform });
     }
 }

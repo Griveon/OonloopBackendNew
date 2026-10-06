@@ -11,7 +11,7 @@ export class ProductCategoryRepository {
     }
 
     async findAll() {
-        return await ProductCategoryModel.find({ isActive: true });
+        return await ProductCategoryModel.find();
     }
 
     async findById(id: string) {
@@ -39,7 +39,7 @@ export class ProductCategoryRepository {
             { new: true }
         );
     }
-    
+
     async findByVendorCategory(vendorCategoryId: string) {
         return await ProductCategoryModel.find({
             vendorCategory: vendorCategoryId,

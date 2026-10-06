@@ -1,26 +1,43 @@
-import { Document } from "mongoose";
+import type { Document } from "mongoose";
+import { AppPlatform } from "../constants/appversion.constant.js";
 
-export type AppPlatform = "android" | "ios";
+export { AppPlatform };
 
 export interface IAppVersion {
     platform: AppPlatform;
-
-    latestVersionCode: number;
-    latestVersionName: string;
-
-    minimumVersionCode: number;
+    latestVersion: string;
+    latestBuildNumber: number;
+    minimumSupportedVersion: string;
+    minimumSupportedBuildNumber: number;
     forceUpdate: boolean;
-
-    updateTitle: string;
-    updateMessage: string;
-
-    playStoreUrl?: string;
-    appStoreUrl?: string;
-
+    storeUrl?: string | undefined;
+    message?: string | undefined;
     isActive: boolean;
 
-    createdAt?: Date;
-    updatedAt?: Date;
+    // Extensible properties for future roadmap
+    maintenanceMode?: boolean | undefined;
+    recommendedUpdate?: boolean | undefined;
+    rolloutPercentage?: number | undefined;
+    deprecatedBuilds?: number[] | undefined;
+
+    createdAt?: Date | undefined;
+    updatedAt?: Date | undefined;
 }
 
-export interface IAppVersionDocument extends IAppVersion, Document { }
+export interface IAppVersionDocument extends IAppVersion, Document {}
+
+export interface IAppVersionCheckQuery {
+    platform: AppPlatform;
+    version?: string | undefined;
+    buildNumber: number;
+}
+
+export interface IAppVersionCheckResponse {
+    updateAvailable: boolean;
+    forceUpdate: boolean;
+    latestVersion: string;
+    latestBuildNumber: number;
+    storeUrl?: string | undefined;
+    message?: string | undefined;
+    maintenanceMode?: boolean | undefined;
+}

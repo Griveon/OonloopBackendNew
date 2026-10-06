@@ -75,7 +75,7 @@ export class OrderSummuryService {
                 );
             }
 
-            let price = 0;
+            let customerSellingPrice = 0;
             let variant: any = null;
 
             if (item.variantId) {
@@ -90,12 +90,31 @@ export class OrderSummuryService {
                     );
                 }
 
-                price = variant.customerSellingPrice ?? variant.price ?? product.mrp ?? 0;
+                customerSellingPrice = round(Number(
+                    variant.customerSellingPrice ??
+                    variant.price ??
+                    product.customerSellingPrice ??
+                    product.price ??
+                    variant.mrp ??
+                    product.mrp ??
+                    0
+                ));
             } else {
-                price = product.customerSellingPrice ?? product.price ?? product.mrp ?? 0;
+                customerSellingPrice = round(Number(
+                    product.customerSellingPrice ??
+                    product.price ??
+                    product.mrp ??
+                    0
+                ));
             }
 
-            const itemTotal = price * qty;
+            if (!Number.isFinite(customerSellingPrice) || customerSellingPrice < 0) {
+                throw new Error(
+                    `Invalid customer selling price for product ${item.productId}`
+                );
+            }
+
+            const itemTotal = customerSellingPrice * qty;
 
             subtotal += itemTotal;
 
@@ -127,17 +146,25 @@ export class OrderSummuryService {
                 variant: variant
                     ? {
                         _id: variant._id,
-                        price: variant.price,
-                        customerSellingPrice: variant.customerSellingPrice ?? variant.price,
+
+                        // Some existing clients read the nested variant price.
+                        // Keep it aligned with the line-item checkout price.
+                        price: customerSellingPrice,
+                        customerSellingPrice,
+                        mrp: variant.mrp ?? product.mrp,
                         unitValue: variant.unitValue,
                         stock: variant.stock,
                         attributes: variant.attributes,
                     }
                     : null,
 
-                mrp: product.mrp,
-                price,
-                customerSellingPrice: price,
+                mrp: variant?.mrp ?? product.mrp,
+
+                // Keep `price` for backward compatibility with existing clients,
+                // but customer-facing checkout pricing always uses the calculated
+                // customer selling price (including category handling).
+                price: customerSellingPrice,
+                customerSellingPrice,
                 qty,
 
                 couponCode: item.couponCode

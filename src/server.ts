@@ -5,12 +5,14 @@ import http from "http";
 import app from "./app.js";
 import { connectDatabase } from "./config/database.js";
 import { initShopperSocket } from "./config/socket.js";
+import { seedAndroidAppVersion } from "./modules/appversions/seeders/seed-appversion-android.js";
 
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
     try {
         await connectDatabase();
+        await seedAndroidAppVersion();
 
         const server = http.createServer(app);
         initShopperSocket(server); // personal-shopper ride-request sockets

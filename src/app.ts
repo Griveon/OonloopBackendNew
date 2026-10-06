@@ -6,6 +6,7 @@ import compression from "compression";
 import path from "path";
 
 import appRoutes from "./routes/app.routes.js";
+import appVersionRoutes from "./modules/appversions/routes/appversion.routes.js";
 // import { migrate } from "./productrunscript.js";
 
 const app = express();
@@ -43,6 +44,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
  */
 
 app.use("/api/v1", appRoutes);
+app.use("/app-version", appVersionRoutes);
 
 // migrate();
 

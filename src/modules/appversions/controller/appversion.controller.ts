@@ -1,180 +1,217 @@
 import type { Request, Response } from "express";
-import { ResponseUtil } from "../../../utils/response.util.js";
 import { AppVersionService } from "../services/appversion.service.js";
+import { ResponseUtil } from "../../../utils/response.util.js";
+import { AppError } from "../../../utils/appError.js";
+import {
+    checkVersionQuerySchema,
+    platformParamSchema,
+} from "../validations/appversion.validation.js";
+import type { AppPlatform } from "../constants/appversion.constant.js";
 
 export class AppVersionController {
-    private service = new AppVersionService();
+    private service: AppVersionService;
 
-    createOrUpdate = async (
-        req: Request,
-        res: Response
-    ) => {
+    constructor() {
+        this.service = new AppVersionService();
+    }
+
+    /**
+     * Public API: Check app version compatibility and required updates.
+     * GET /app-version/check?platform=android&version=1.5.0&buildNumber=15
+     */
+    checkVersion = async (req: Request, res: Response) => {
         try {
-            const data =
-                await this.service.createOrUpdate(
-                    req.body
-                );
+            const validation = checkVersionQuerySchema.safeParse(req.query);
 
-            return res
-                .status(200)
-                .json(
-                    ResponseUtil.success(
-                        "App version saved successfully",
-                        data
-                    )
-                );
-        } catch (error: any) {
-            return res
-                .status(400)
-                .json(
-                    ResponseUtil.badRequest(
-                        error.message
-                    )
-                );
-        }
-    };
+            if (!validation.success) {
+                const friendlyErrors = validation.error.issues.map((issue) => ({
+                    field: issue.path.join("."),
+                    message: issue.message,
+                }));
 
-    checkVersion = async (
-        req: Request,
-        res: Response
-    ) => {
-        try {
-            const data =
-                await this.service.checkVersion({
-                    platform: String(req.query.platform || ""),
-                    versionCode: String(req.query.versionCode || ""),
-                });
+                return res
+                    .status(400)
+                    .json(
+                        ResponseUtil.validationError(
+                            "Validation error",
+                            friendlyErrors
+                        )
+                    );
+            }
+
+            const result = await this.service.checkVersion({
+                platform: validation.data.platform as AppPlatform,
+                version: validation.data.version,
+                buildNumber: validation.data.buildNumber,
+            });
 
             return res
                 .status(200)
                 .json(
                     ResponseUtil.success(
                         "App version checked successfully",
-                        data
+                        result
                     )
                 );
         } catch (error: any) {
-            return res
-                .status(400)
-                .json(
-                    ResponseUtil.badRequest(
-                        error.message
-                    )
-                );
+            return this.handleError(res, error);
         }
     };
 
-    getAll = async (
-        req: Request,
-        res: Response
-    ) => {
+    /**
+     * Admin API: Upsert platform version configuration.
+     * PUT /app-version/:platform
+     */
+    upsertPlatformConfig = async (req: Request, res: Response) => {
         try {
-            const data =
-                await this.service.getAll();
+            const paramValidation = platformParamSchema.safeParse(req.params);
 
-            return res
-                .status(200)
-                .json(
-                    ResponseUtil.success(
-                        "App versions fetched successfully",
-                        data
-                    )
-                );
-        } catch (error: any) {
-            return res
-                .status(500)
-                .json(
-                    ResponseUtil.serverError(
-                        error.message
-                    )
-                );
-        }
-    };
+            if (!paramValidation.success) {
+                const friendlyErrors = paramValidation.error.issues.map((issue) => ({
+                    field: issue.path.join("."),
+                    message: issue.message,
+                }));
 
-    getById = async (
-        req: Request,
-        res: Response
-    ) => {
-        try {
-            const data =
-                await this.service.getById(
-                    req.params.id
-                );
+                return res
+                    .status(400)
+                    .json(
+                        ResponseUtil.validationError(
+                            "Validation error",
+                            friendlyErrors
+                        )
+                    );
+            }
 
-            return res
-                .status(200)
-                .json(
-                    ResponseUtil.success(
-                        "App version fetched successfully",
-                        data
-                    )
-                );
-        } catch (error: any) {
-            return res
-                .status(404)
-                .json(
-                    ResponseUtil.notFound(
-                        error.message
-                    )
-                );
-        }
-    };
-
-    updateById = async (
-        req: Request,
-        res: Response
-    ) => {
-        try {
-            const data =
-                await this.service.updateById(
-                    req.params.id,
-                    req.body
-                );
-
-            return res
-                .status(200)
-                .json(
-                    ResponseUtil.success(
-                        "App version updated successfully",
-                        data
-                    )
-                );
-        } catch (error: any) {
-            return res
-                .status(400)
-                .json(
-                    ResponseUtil.badRequest(
-                        error.message
-                    )
-                );
-        }
-    };
-
-    deleteById = async (
-        req: Request,
-        res: Response
-    ) => {
-        try {
-            await this.service.deleteById(
-                req.params.id
+            const platform = paramValidation.data.platform as AppPlatform;
+            const result = await this.service.upsertPlatformConfig(
+                platform,
+                req.body
             );
 
             return res
                 .status(200)
                 .json(
                     ResponseUtil.success(
-                        "App version deleted successfully",
-                        {}
+                        `App version configuration for ${platform} saved successfully`,
+                        result
                     )
                 );
         } catch (error: any) {
-            return res
-                .status(404)
-                .json(
-                    ResponseUtil.notFound(
-                        error.message
-                    )
-                );
+            return this.handleError(res, error);
         }
     };
+
+    /**
+     * Admin API: Get version configuration for a platform.
+     * GET /app-version/:platform
+     */
+    getConfigByPlatform = async (req: Request, res: Response) => {
+        try {
+            const paramValidation = platformParamSchema.safeParse(req.params);
+
+            if (!paramValidation.success) {
+                return res
+                    .status(400)
+                    .json(
+                        ResponseUtil.badRequest(
+                            "Invalid platform. Supported platforms are: android, ios"
+                        )
+                    );
+            }
+
+            const platform = paramValidation.data.platform as AppPlatform;
+            const result = await this.service.getConfigByPlatform(platform);
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        `App version configuration for ${platform} fetched successfully`,
+                        result
+                    )
+                );
+        } catch (error: any) {
+            return this.handleError(res, error);
+        }
+    };
+
+    /**
+     * Admin API: Get all platform configurations.
+     * GET /app-version
+     */
+    getAllConfigs = async (_req: Request, res: Response) => {
+        try {
+            const result = await this.service.getAllConfigs();
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        "App version configurations fetched successfully",
+                        result
+                    )
+                );
+        } catch (error: any) {
+            return this.handleError(res, error);
+        }
+    };
+
+    /**
+     * Admin API: Delete platform version configuration.
+     * DELETE /app-version/:platform
+     */
+    deleteConfigByPlatform = async (req: Request, res: Response) => {
+        try {
+            const paramValidation = platformParamSchema.safeParse(req.params);
+
+            if (!paramValidation.success) {
+                return res
+                    .status(400)
+                    .json(
+                        ResponseUtil.badRequest(
+                            "Invalid platform. Supported platforms are: android, ios"
+                        )
+                    );
+            }
+
+            const platform = paramValidation.data.platform as AppPlatform;
+            const result = await this.service.deleteConfigByPlatform(platform);
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        `App version configuration for ${platform} deleted successfully`,
+                        result
+                    )
+                );
+        } catch (error: any) {
+            return this.handleError(res, error);
+        }
+    };
+
+    /**
+     * Unified error response handler
+     */
+    private handleError(res: Response, error: any) {
+        if (error instanceof AppError) {
+            if (error.statusCode === 404) {
+                return res
+                    .status(404)
+                    .json(ResponseUtil.notFound(error.message));
+            }
+            return res
+                .status(error.statusCode)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+
+        return res
+            .status(500)
+            .json(
+                ResponseUtil.serverError(
+                    error.message || "Internal server error",
+                    error
+                )
+            );
+    }
 }

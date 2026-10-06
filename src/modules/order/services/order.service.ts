@@ -180,7 +180,7 @@ export class OrderService {
             }
 
             const vendorId =
-                item.vendor ||
+                product.vendorId ||
                 product.vendor ||
                 product.user;
 
@@ -189,36 +189,52 @@ export class OrderService {
             }
 
             let matchedVariant: any = null;
-            if (item.variant && Array.isArray(product.variants)) {
-                matchedVariant = product.variants.find(
+            if (item.variant) {
+                matchedVariant = product.variants?.find(
                     (v: any) => String(v._id) === String(item.variant)
                 );
+
+                if (!matchedVariant) {
+                    throw new Error(`Variant not found for product ${item.product}`);
+                }
             }
 
-            const baseCustomerSellingPrice = matchedVariant
-                ? (matchedVariant.customerSellingPrice ?? matchedVariant.price)
-                : (product.customerSellingPrice ?? product.price ?? 0);
-
-            const price = round(Number(item.customerSellingPrice ?? item.price ?? baseCustomerSellingPrice));
+            // Pricing is server-authoritative. `price` submitted by an older client
+            // is deliberately ignored so stale/base prices cannot bypass the
+            // customer selling price (which includes category handling).
+            const customerSellingPrice = round(Number(
+                matchedVariant
+                    ? matchedVariant.customerSellingPrice ??
+                    matchedVariant.price ??
+                    product.customerSellingPrice ??
+                    product.price ??
+                    matchedVariant.mrp ??
+                    product.mrp ??
+                    0
+                    : product.customerSellingPrice ??
+                    product.price ??
+                    product.mrp ??
+                    0
+            ));
 
             const mrp =
-                item.mrp !== undefined
-                    ? round(Number(item.mrp))
-                    : product.mrp !== undefined
+                matchedVariant?.mrp !== undefined && matchedVariant?.mrp !== null
+                    ? round(Number(matchedVariant.mrp))
+                    : product.mrp !== undefined && product.mrp !== null
                         ? round(Number(product.mrp))
-                        : price;
+                        : customerSellingPrice;
 
             const quantity = Number(item.quantity || 0);
 
-            if (price < 0) {
-                throw new Error("Invalid item price");
+            if (!Number.isFinite(customerSellingPrice) || customerSellingPrice < 0) {
+                throw new Error("Invalid customer selling price");
             }
 
             if (quantity <= 0) {
                 throw new Error("Invalid item quantity");
             }
 
-            const itemTotal = round(price * quantity);
+            const itemTotal = round(customerSellingPrice * quantity);
 
             calculatedSubtotal += itemTotal;
             vendorIdsSet.add(String(vendorId));
@@ -229,8 +245,9 @@ export class OrderService {
                 variant: item.variant || null,
                 name: item.name || product.name || product.productName || "Product",
                 sku: item.sku || product.sku,
-                price,
-                customerSellingPrice: price,
+                // `price` is retained as an API/schema compatibility alias.
+                price: customerSellingPrice,
+                customerSellingPrice,
                 mrp,
                 quantity,
                 images: item.images || product.images || [],
@@ -242,19 +259,28 @@ export class OrderService {
 
         const vendorIds = Array.from(vendorIdsSet);
 
-        const subtotal = round(Number(data.subtotal ?? calculatedSubtotal));
+        const submittedSubtotal = toNumberOrNull(data.subtotal);
+
+        // Item prices come from the current product/variant records, so the
+        // persisted subtotal must be rebuilt from those same resolved prices.
+        const subtotal = calculatedSubtotal;
         const discount = round(Number(data.discount ?? 0));
         const shippingCharge = round(
             Number(data.shippingCharge ?? data.deliveryFee ?? 0)
         );
         const gstAmount = round(Number(data.gstAmount ?? data.feeGst ?? 0));
 
-        const totalAmount = round(
-            Number(
-                data.totalAmount ??
-                subtotal - discount + shippingCharge + gstAmount
+        const submittedTotalAmount = toNumberOrNull(data.totalAmount);
+        const totalAmount = submittedTotalAmount !== null
+            ? round(
+                submittedTotalAmount +
+                (subtotal - (
+                    submittedSubtotal !== null
+                        ? round(submittedSubtotal)
+                        : subtotal
+                ))
             )
-        );
+            : round(subtotal - discount + shippingCharge + gstAmount);
 
         const paymentMode = data.paymentMode === "cod" ? "cod" : "online";
 
