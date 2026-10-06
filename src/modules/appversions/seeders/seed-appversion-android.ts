@@ -30,7 +30,7 @@ export const seedAndroidAppVersion = async (): Promise<void> => {
             minimumSupportedBuildNumber: 1,
             forceUpdate: false,
             storeUrl:
-                "https://play.google.com/store/apps/details?id=com.example.app",
+                "https://play.google.com/store/apps/details?id=com.oonloop.user",
             message: "A new version of the app is available.",
             isActive: true,
         };
