@@ -46,6 +46,8 @@ export class OrderRepository {
             ...filter,
             user: userId,
             isActive: true,
+            // Preorder-sourced orders are shown under the Preorders list.
+            isPreorder: { $ne: true },
         };
 
         const [items, total] = await Promise.all([

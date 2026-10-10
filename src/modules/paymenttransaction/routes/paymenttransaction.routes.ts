@@ -55,6 +55,18 @@ paymentTransactionsRoutes.post(
     controller.verifyManualDelivery
 );
 
+paymentTransactionsRoutes.post(
+    "/createpreorder",
+    authMiddleware,
+    controller.createPreorderTransaction
+);
+
+paymentTransactionsRoutes.post(
+    "/verifypreorder",
+    authMiddleware,
+    controller.verifyPreorder
+);
+
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);
 
 paymentTransactionsRoutes.post("/verify", authMiddleware, controller.verify);

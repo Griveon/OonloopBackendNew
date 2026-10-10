@@ -201,6 +201,38 @@ export class PreorderController {
         }
     };
 
+    // GET /preorder/vendor/orders/:id/pickup-otp  (auth, seller)
+    getPickupOtp = async (req: Request, res: Response) => {
+        try {
+            const vendorId = req.user?.id as string;
+            const result = await this.service.getPickupOtp(
+                vendorId,
+                req.params.id as string
+            );
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Pickup OTP", result));
+        } catch (error: any) {
+            return res.status(400).json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    // GET /preorder/:id/delivery-otp  (auth, customer)
+    getDeliveryOtp = async (req: Request, res: Response) => {
+        try {
+            const userId = req.user?.id as string;
+            const result = await this.service.getDeliveryOtp(
+                userId,
+                req.params.id as string
+            );
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Delivery OTP", result));
+        } catch (error: any) {
+            return res.status(400).json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     // PUT /preorder/vendor/orders/:id/status  (auth, seller)
     updateStatus = async (req: Request, res: Response) => {
         try {

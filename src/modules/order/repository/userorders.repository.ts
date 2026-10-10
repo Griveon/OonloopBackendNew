@@ -5,8 +5,11 @@ export class UserOrdersRepository {
     async getUserOrders(userId: string, page = 1, limit = 10) {
         const skip = (page - 1) * limit;
 
+        // Preorder-sourced orders live under the Preorders list, not here.
+        const query = { user: userId, isActive: true, isPreorder: { $ne: true } };
+
         const [orders, total] = await Promise.all([
-            OrderModel.find({ user: userId, isActive: true })
+            OrderModel.find(query)
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -14,7 +17,7 @@ export class UserOrdersRepository {
                 .populate("paymentMethod", "name type") // optional
                 .lean(),
 
-            OrderModel.countDocuments({ user: userId, isActive: true })
+            OrderModel.countDocuments(query)
         ]);
 
         return {

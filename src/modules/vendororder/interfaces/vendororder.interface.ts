@@ -263,6 +263,9 @@ export interface IOrderVendor {
 
     notes?: string;
 
+    isPreorder?: boolean;
+    preorder?: Types.ObjectId;
+
     isActive: boolean;
 
     createdAt?: Date;

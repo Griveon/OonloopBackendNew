@@ -136,6 +136,24 @@ const preorderOrderSchema = new Schema<IPreorderOrderDocument>(
             ref: "PaymentTransaction",
         },
 
+        paymentMethod: {
+            type: Schema.Types.ObjectId,
+            ref: "PaymentMethod",
+        },
+
+        // Set when the seller marks the preorder "ready": the preorder is
+        // materialized into the normal Order + OrderVendor so it enters the
+        // existing driver delivery flow. We keep the links to mirror the
+        // delivery status back onto this preorder for the customer.
+        linkedOrder: {
+            type: Schema.Types.ObjectId,
+            ref: "Order",
+        },
+        linkedVendorOrder: {
+            type: Schema.Types.ObjectId,
+            ref: "OrderVendor",
+        },
+
         driver: {
             type: Schema.Types.ObjectId,
             ref: "User",

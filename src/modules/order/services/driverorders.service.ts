@@ -1,6 +1,7 @@
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 import { OrderModel } from "../models/order.model.js";
 import { DriverOrderRepository } from "../repository/driverorders.repository.js";
+import { syncPreorderFromVendorOrder } from "../../preorder/services/preorderbridge.service.js";
 
 const validDeliveryTransitions: Record<string, string[]> = {
     not_assigned: [
@@ -446,6 +447,9 @@ export class DriverOrderService {
             throw new Error("Order not found");
         }
 
+        // Mirror coarse delivery progress back to the source preorder (if any).
+        await syncPreorderFromVendorOrder(updatedOrder).catch(() => {});
+
         return updatedOrder;
     }
 
@@ -611,6 +615,9 @@ export class DriverOrderService {
         if (!updatedOrder) {
             throw new Error("Order not found");
         }
+
+        // Mirror delivered state back to the source preorder (if any).
+        await syncPreorderFromVendorOrder(updatedOrder).catch(() => {});
 
         return updatedOrder;
     }

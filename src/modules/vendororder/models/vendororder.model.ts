@@ -573,6 +573,20 @@ const orderVendorSchema = new Schema<IOrderVendorDocument>(
             trim: true,
         },
 
+        // Materialized from a Preorder at the seller's "ready" handoff.
+        // Driver flow treats it like any order; kept out of the seller's
+        // normal order list (managed under Preorders instead).
+        isPreorder: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+
+        preorder: {
+            type: Schema.Types.ObjectId,
+            ref: "PreorderOrder",
+        },
+
         isActive: {
             type: Boolean,
             default: true,

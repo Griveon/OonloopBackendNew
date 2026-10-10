@@ -109,6 +109,11 @@ export interface IPreorderOrder {
     status: PreorderOrderStatus;
     paymentStatus: PreorderPaymentStatus;
     paymentTransaction?: Types.ObjectId;
+    paymentMethod?: Types.ObjectId;
+
+    // Bridge links to the normal delivery pipeline (set at "ready").
+    linkedOrder?: Types.ObjectId;
+    linkedVendorOrder?: Types.ObjectId;
 
     // Rider (User with role "driver") — reuses the delivery pipeline.
     driver?: Types.ObjectId;

@@ -16,6 +16,10 @@ import {
     istMinutesNow,
     timeToMinutes,
 } from "../utils/preorder.util.js";
+import {
+    bridgePreorderToDelivery,
+    getPreorderDeliveryTracking,
+} from "./preorderbridge.service.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -474,7 +478,18 @@ export class PreorderService {
         const order: any = await this.repo.findOrderById(id);
         if (!order) throw new Error("Preorder not found");
         if (!this.canAccess(order, userId)) throw new Error("Preorder not found");
-        return order;
+
+        // Once handed to delivery, surface the coarse delivery tracking inline
+        // so the customer stays on the preorder screen (no endpoint switch).
+        const obj = order.toObject();
+        if (order.linkedVendorOrder) {
+            obj.deliveryTracking = await getPreorderDeliveryTracking(
+                order.linkedVendorOrder
+            );
+        } else {
+            obj.deliveryTracking = null;
+        }
+        return obj;
     }
 
     private canAccess(order: any, userId: string): boolean {
@@ -530,6 +545,45 @@ export class PreorderService {
         return this.repo.findByVendor(vendorId, page, limit, status);
     }
 
+    // ==================================================================
+    // OTP handoff — identical to the normal order flow, reused against the
+    // bridged OrderVendor so the customer/seller stay on the preorder screens.
+    // ==================================================================
+
+    /** Seller: pickup OTP to show the rider (same as normal getVendorPickupOtp). */
+    async getPickupOtp(vendorId: string, preorderId: string) {
+        const pre: any = await this.repo.findRawById(preorderId);
+        if (!pre) throw new Error("Preorder not found");
+        if (pre.vendor?.toString() !== vendorId) throw new Error("Preorder not found");
+        if (!pre.linkedVendorOrder) {
+            throw new Error("Preorder is not ready for pickup yet");
+        }
+        const { VendorOrderService } = await import(
+            "../../order/services/vendororders.service.js"
+        );
+        return new VendorOrderService().getVendorPickupOtp(
+            pre.linkedVendorOrder.toString(),
+            vendorId
+        );
+    }
+
+    /** Customer: delivery OTP to give the rider (same as normal getCustomerDeliveryOtp). */
+    async getDeliveryOtp(userId: string, preorderId: string) {
+        const pre: any = await this.repo.findRawById(preorderId);
+        if (!pre) throw new Error("Preorder not found");
+        if (pre.user?.toString() !== userId) throw new Error("Preorder not found");
+        if (!pre.linkedVendorOrder) {
+            throw new Error("Delivery has not started yet");
+        }
+        const { CustomerOrderService } = await import(
+            "../../order/services/customerorders.service.js"
+        );
+        return new CustomerOrderService().getCustomerDeliveryOtp(
+            pre.linkedVendorOrder.toString(),
+            userId
+        );
+    }
+
     async updateStatus(
         vendorId: string,
         orderId: string,
@@ -547,11 +601,12 @@ export class PreorderService {
             throw new Error("Preorder is not paid yet");
         }
 
+        // After "ready" the delivery is driven by the normal driver flow
+        // (bridged into Order/OrderVendor) and mirrored back — the seller no
+        // longer advances out_for_delivery / delivered manually.
         const transitions: Record<string, string[]> = {
             placed: ["preparing", "cancelled"],
             preparing: ["ready", "cancelled"],
-            ready: ["out_for_delivery"],
-            out_for_delivery: ["delivered"],
         };
 
         const allowed = transitions[order.status] || [];
@@ -561,9 +616,16 @@ export class PreorderService {
             );
         }
 
+        // Hand off to the delivery pipeline BEFORE marking ready, so a bridge
+        // failure leaves the preorder in "preparing" (seller can retry).
+        if (nextStatus === "ready") {
+            const raw = await this.repo.findRawById(orderId);
+            if (!raw) throw new Error("Preorder not found");
+            await bridgePreorderToDelivery(raw);
+        }
+
         const set: Record<string, any> = { status: nextStatus };
         if (nextStatus === "ready") set.readyAt = new Date();
-        if (nextStatus === "delivered") set.deliveredAt = new Date();
         if (nextStatus === "cancelled") set.cancelledAt = new Date();
 
         return this.repo.pushTrackingAndSet(orderId, set, {
