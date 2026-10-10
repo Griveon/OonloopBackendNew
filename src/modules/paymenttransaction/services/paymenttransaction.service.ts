@@ -666,6 +666,8 @@ export class PaymentTransactionService {
             await this.repo.markSuccess(transactionId, razorpay_payment_id || `DEMO-PAY-${Date.now()}`);
             await this.repo.markPreorderPaid(demoPreorderId, transactionId);
 
+            void this.sendPreorderPaidToSeller(demoPreorder);
+
             return {
                 success: true,
                 message: "Payment verified & preorder confirmed",
@@ -706,11 +708,49 @@ export class PaymentTransactionService {
         await this.repo.markSuccess(transactionId, razorpay_payment_id);
         await this.repo.markPreorderPaid(preorderId, transactionId);
 
+        void this.sendPreorderPaidToSeller(preorder);
+
         return {
             success: true,
             message: "Payment verified & preorder confirmed",
             preorderId: preorder._id,
         };
+    }
+
+    /**
+     * Notify the seller that a new preorder was paid. Routed to the seller's
+     * Preorder screen (not the normal Orders screen), and sent directly to the
+     * vendor since no OrderVendor exists yet (the bridge runs later, at ready).
+     */
+    private async sendPreorderPaidToSeller(preorder: any) {
+        try {
+            const vendorId = preorder?.vendor?.toString?.();
+            if (!vendorId) return;
+
+            const orderNumber = preorder.orderNumber || "";
+            const data: Record<string, string> = {
+                type: "PREORDER_NEW",
+                screen: "VENDOR_PREORDER_DETAILS",
+                preorderId: preorder._id.toString(),
+                orderNumber,
+                fulfillmentMode: preorder.fulfillmentMode || "",
+                click_action: "FLUTTER_NOTIFICATION_CLICK",
+            };
+            if (preorder.fulfillmentMode === "scheduled" && preorder.scheduled) {
+                data.slotLabel = preorder.scheduled.slotLabel || "";
+            }
+
+            await this.firebaseTokenService.sendNotificationToUser({
+                userId: vendorId,
+                title: "New preorder received",
+                body: orderNumber
+                    ? `Preorder ${orderNumber} has been paid. Open Preorders to prepare it.`
+                    : "A new preorder has been paid. Open Preorders to prepare it.",
+                data,
+            });
+        } catch (error: any) {
+            console.log("Preorder seller push error:", error?.message || error);
+        }
     }
 
     async verifyPayment(data: any) {

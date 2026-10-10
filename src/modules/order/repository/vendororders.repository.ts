@@ -15,6 +15,9 @@ export class VendorOrderRepository {
             vendor: vendorId,
             isActive: true,
             paymentStatus: "success",
+            // Preorders are managed by the seller under the Preorders queue,
+            // not the normal order list — the bridged record is delivery-only.
+            isPreorder: { $ne: true },
         };
 
         if (filter.status) {

@@ -147,6 +147,11 @@ export class PreorderRepository {
             .populate("driver", "firstName lastName mobileNumber");
     }
 
+    // Raw (unpopulated) doc — used by the delivery bridge which needs plain ids.
+    async findRawById(id: string) {
+        return PreorderOrderModel.findOne({ _id: id, isActive: true });
+    }
+
     async findByUser(userId: string, page = 1, limit = 10, status?: string) {
         const skip = (page - 1) * limit;
         const query: any = { user: userId, isActive: true };

@@ -421,6 +421,20 @@ const orderSchema = new Schema<IOrderDocument>(
             trim: true,
         },
 
+        // True when this Order was materialized from a Preorder at the seller's
+        // "ready" handoff. Used to keep preorder-sourced orders out of the
+        // normal customer/seller order lists (they live under Preorders).
+        isPreorder: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+
+        preorder: {
+            type: Schema.Types.ObjectId,
+            ref: "PreorderOrder",
+        },
+
         isActive: {
             type: Boolean,
             default: true,

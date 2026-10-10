@@ -148,6 +148,9 @@ export interface IOrder {
 
     notes?: string;
 
+    isPreorder?: boolean;
+    preorder?: Types.ObjectId;
+
     isActive: boolean;
 
     createdAt?: Date;

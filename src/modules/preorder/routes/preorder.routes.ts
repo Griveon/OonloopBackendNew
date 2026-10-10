@@ -38,6 +38,11 @@ preorderRoutes.put(
     authMiddleware,
     controller.updateStatus
 );
+preorderRoutes.get(
+    "/vendor/orders/:id/pickup-otp",
+    authMiddleware,
+    controller.getPickupOtp
+);
 
 // ---------------- Customer: orders ----------------
 preorderRoutes.post(
@@ -48,6 +53,7 @@ preorderRoutes.post(
 );
 preorderRoutes.get("/my", authMiddleware, controller.getMyOrders);
 preorderRoutes.get("/get/:id", authMiddleware, controller.getById);
+preorderRoutes.get("/:id/delivery-otp", authMiddleware, controller.getDeliveryOtp);
 preorderRoutes.put("/cancel/:id", authMiddleware, controller.cancel);
 
 export default preorderRoutes;
