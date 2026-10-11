@@ -4,9 +4,11 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "test": "tsx --test src/tests/variant-cart-integrity.test.ts src/tests/vendor-category-ranking.test.ts",
     "dev": "nodemon --watch src --exec tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "migrate:variant-identity": "tsx src/scripts/migrate-variant-identity.ts",
     "migrate:product-pricing": "tsx src/scripts/migrate-product-pricing.ts",
     "migrate:vendorcategory-additional-handling": "tsx src/scripts/migrate-vendorcategory-additional-handling.ts"
   },

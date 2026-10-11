@@ -23,6 +23,8 @@ export interface IVendorCategory {
 
     isActive: boolean;
 
+    clickCount?: number;
+
     createdAt?: Date;
     updatedAt?: Date;
 }

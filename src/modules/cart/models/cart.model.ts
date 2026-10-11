@@ -1,6 +1,22 @@
 import mongoose, { Schema, Model } from "mongoose";
 import type { ICartDocument, ICartItem } from "../interfaces/cart.interface.js";
 
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+
+export const calculateCartTotals = (items: ICartItem[]) => {
+    const totalItems = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const subTotal = roundMoney(items.reduce(
+        (sum, item) => sum + Number(item.customerSellingPrice ?? item.price ?? 0) * item.quantity,
+        0
+    ));
+    const totalGST = roundMoney(items.reduce(
+        (sum, item) => sum + Number(item.gstAmount || 0) * item.quantity,
+        0
+    ));
+
+    return { totalItems, subTotal, totalGST, grandTotal: roundMoney(subTotal + totalGST) };
+};
+
 const cartItemSchema = new Schema<ICartItem>(
     {
         product: {
@@ -86,26 +102,16 @@ const cartSchema = new Schema<ICartDocument>(
     },
     {
         timestamps: true,
+        optimisticConcurrency: true,
     }
 );
 
 cartSchema.pre("save", async function (this: ICartDocument) {
-    this.totalItems = this.items.reduce(
-        (sum, i) => sum + i.quantity,
-        0
-    );
-
-    this.subTotal = this.items.reduce(
-        (sum, i) => sum + Number(i.customerSellingPrice ?? i.price ?? 0) * i.quantity,
-        0
-    );
-
-    this.totalGST = this.items.reduce(
-        (sum, i) => sum + (i.gstAmount || 0),
-        0
-    );
-
-    this.grandTotal = this.subTotal + this.totalGST;
+    const totals = calculateCartTotals(this.items);
+    this.totalItems = totals.totalItems;
+    this.subTotal = totals.subTotal;
+    this.totalGST = totals.totalGST;
+    this.grandTotal = totals.grandTotal;
 });
 
 export const CartModel: Model<ICartDocument> =

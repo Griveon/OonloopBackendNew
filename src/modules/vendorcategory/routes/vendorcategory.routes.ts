@@ -10,6 +10,8 @@ import {
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
 
 import { validateUsingZOD } from "../../../utils/zodvalidate.util.js";
+import { optionalAuthMiddleware } from "../../../middlewares/authmiddleware/optional-auth.middleware.js";
+import { categoryClickGuard } from "../middlewares/categoryclick.middleware.js";
 
 const vendorCategoryRoutes = Router();
 
@@ -59,6 +61,13 @@ vendorCategoryRoutes.get(
 vendorCategoryRoutes.get(
     "/get/:id",
     controller.getById
+);
+
+vendorCategoryRoutes.post(
+    "/:categoryId/click",
+    optionalAuthMiddleware,
+    categoryClickGuard,
+    controller.recordClick
 );
 
 /**

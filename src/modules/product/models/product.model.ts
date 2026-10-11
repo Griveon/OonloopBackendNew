@@ -67,6 +67,7 @@ const additionalHandlingSnapshotSchema = new Schema(
 
 const variantSchema = new Schema<IProductVariant>(
     {
+        sourceVariantId: { type: Schema.Types.ObjectId, index: true },
         attributes: { type: Map, of: Schema.Types.Mixed },
         images: [imageSchema],
         unit: { type: Schema.Types.ObjectId, ref: "Unit", index: true },
@@ -195,6 +196,11 @@ const productSchema = new Schema<IProduct>(
     },
     { timestamps: true }
 );
+
+productSchema.path("variants").validate(function (variants: any[]) {
+    const ids = (variants || []).map((variant) => variant?._id?.toString()).filter(Boolean);
+    return ids.length === new Set(ids).size;
+}, "Variant IDs must be unique within a product");
 
 productSchema.virtual("totalStock").get(function () {
     if (!this.variants || this.variants.length === 0) return this.stock;

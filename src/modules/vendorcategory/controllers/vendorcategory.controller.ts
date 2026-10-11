@@ -91,6 +91,22 @@ export class VendorCategoryController {
         }
     };
 
+    recordClick = async (req: Request, res: Response) => {
+        try {
+            const categoryId = this.getParam(req.params.categoryId);
+            if (!categoryId) {
+                return res.status(400).json(ResponseUtil.badRequest("Category ID is required"));
+            }
+
+            const result = await this.service.recordClick(categoryId);
+            return res.status(200).json(
+                ResponseUtil.success("Category click recorded successfully", result)
+            );
+        } catch (error: any) {
+            return res.status(400).json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
     update = async (req: Request, res: Response) => {
         try {
             const id = this.getParam(req.params.id);

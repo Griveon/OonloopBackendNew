@@ -1,4 +1,5 @@
 import { VendorCategoryRepository } from "../repositories/vendorcategory.repository.js";
+import mongoose from "mongoose";
 
 export class VendorCategoryService {
     private repo: VendorCategoryRepository;
@@ -8,15 +9,36 @@ export class VendorCategoryService {
     }
 
     async create(data: any) {
-        return await this.repo.create(data);
+        const { clickCount: _ignored, ...safeData } = data || {};
+        return await this.repo.create(safeData);
     }
 
     async createBulk(data: any[]) {
-        return await this.repo.createBulk(data);
+        return await this.repo.createBulk(
+            data.map(({ clickCount: _ignored, ...category }) => category)
+        );
     }
 
     async getAll(role: any) {
-        return await this.repo.findAll(role);
+        const categories = await this.repo.findAll(role);
+        if (role === "vendor") return categories;
+
+        return categories.map((category: any, index: number) => ({
+            ...category,
+            clickCount: Number(category.clickCount ?? 0),
+            rank: index + 1,
+        }));
+    }
+
+    async recordClick(id: string) {
+        if (!mongoose.isValidObjectId(id)) {
+            throw new Error("Invalid category ID");
+        }
+
+        const category = await this.repo.incrementClick(id);
+        if (!category) throw new Error("Category not found or inactive");
+
+        return { categoryId: category._id.toString() };
     }
 
     async getById(id: string) {
@@ -29,7 +51,8 @@ export class VendorCategoryService {
         const existing = await this.repo.findById(id);
         if (!existing) throw new Error("Category not found");
 
-        return await this.repo.update(id, data);
+        const { clickCount: _ignored, ...safeData } = data || {};
+        return await this.repo.update(id, safeData);
     }
 
     async deactivate(id: string) {

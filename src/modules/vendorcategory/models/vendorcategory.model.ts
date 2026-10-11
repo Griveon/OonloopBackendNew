@@ -62,12 +62,19 @@ const VendorCategorySchema: Schema<IVendorCategoryDocument> =
                 default: true,
                 index: true,
             },
+
+            clickCount: {
+                type: Number,
+                default: 0,
+                min: 0,
+            },
         },
         { timestamps: true }
     );
 
 // Optional: prevent duplicate names
 VendorCategorySchema.index({ name: 1 }, { unique: true });
+VendorCategorySchema.index({ isActive: 1, clickCount: -1, _id: 1 });
 
 export const VendorCategoryModel: Model<IVendorCategoryDocument> =
     mongoose.model<IVendorCategoryDocument>(

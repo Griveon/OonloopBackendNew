@@ -31,12 +31,20 @@ export class VendorCategoryRepository {
             },
             isActive: true,
         })
-            .sort({ name: 1 })
+            .sort({ clickCount: -1, _id: 1 })
             .lean();
     }
 
     async findById(id: string) {
         return await VendorCategoryModel.findById(id);
+    }
+
+    async incrementClick(id: string) {
+        return await VendorCategoryModel.findOneAndUpdate(
+            { _id: id, isActive: true },
+            { $inc: { clickCount: 1 } },
+            { new: true, projection: { _id: 1 } }
+        );
     }
 
     async update(id: string, data: Partial<IVendorCategory>) {

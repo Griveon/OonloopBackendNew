@@ -9,6 +9,7 @@ import {
     getDefaultAdditionalHandlingSnapshot,
     type IAdditionalHandlingConfig,
 } from "../utils/pricing.util.js";
+import mongoose from "mongoose";
 
 export class ProductService {
     private repo: ProductRepository;
@@ -127,7 +128,13 @@ export class ProductService {
                 }
 
                 return {
-                    ...(v._id ? { _id: v._id } : {}),
+                    // A created product is an independent aggregate. Never trust or
+                    // reuse a client/catalog subdocument id; retain it only as an
+                    // explicit lineage reference.
+                    _id: new mongoose.Types.ObjectId(),
+                    ...((v.sourceVariantId || v._id) && mongoose.isValidObjectId(v.sourceVariantId || v._id)
+                        ? { sourceVariantId: v.sourceVariantId || v._id }
+                        : {}),
 
                     variantId: v.variantId,
                     attributes: v.attributes || {},
@@ -373,6 +380,11 @@ export class ProductService {
                 : null;
 
         if (Array.isArray(variantsToPrice)) {
+            const existingVariantIds = new Set(
+                (existing.variants || []).map((variant: any) => variant._id.toString())
+            );
+            const usedExistingVariantIds = new Set<string>();
+
             const safeVariants = variantsToPrice.map((v: any) => {
                 const price = Number(v.price || 0);
                 const mrp = Number(v.mrp || 0);
@@ -395,9 +407,31 @@ export class ProductService {
                     customerSellingPrice = price;
                 }
 
+                const requestedId = v._id?.toString();
+                const preservesExistingId = Boolean(
+                    requestedId && existingVariantIds.has(requestedId)
+                );
+
+                if (preservesExistingId && usedExistingVariantIds.has(requestedId)) {
+                    throw new Error("Duplicate variant ID in product update");
+                }
+                if (preservesExistingId) {
+                    usedExistingVariantIds.add(requestedId);
+                }
+
+                const variantId = preservesExistingId
+                    ? v._id
+                    : new mongoose.Types.ObjectId();
+                const sourceVariantId = v.sourceVariantId ||
+                    (!preservesExistingId && requestedId && mongoose.isValidObjectId(requestedId)
+                        ? requestedId
+                        : undefined);
+
                 return {
-                    // Preserve _id so Mongoose doesn't regenerate it on replace
-                    ...(v._id ? { _id: v._id } : {}),
+                    // Existing variants keep their id. New/foreign variants receive
+                    // a server-generated id, including catalog clones.
+                    _id: variantId,
+                    ...(sourceVariantId ? { sourceVariantId } : {}),
 
                     variantId: v.variantId,
                     attributes: v.attributes || {},

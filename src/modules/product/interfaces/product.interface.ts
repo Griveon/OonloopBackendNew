@@ -2,6 +2,9 @@ import { Types } from "mongoose";
 
 // Variant interface with images
 export interface IProductVariant {
+    _id?: Types.ObjectId;
+    /** Original variant identity when this variant was cloned/re-keyed. */
+    sourceVariantId?: Types.ObjectId;
     attributes: Record<string, any>;
     images?: IProductImage[];          // Each variant can have multiple images
     unit?: Types.ObjectId;

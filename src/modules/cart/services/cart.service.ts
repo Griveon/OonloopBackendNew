@@ -1,6 +1,18 @@
+import mongoose from "mongoose";
 import { CartRepository } from "../repositories/cart.repository.js";
 import { ProductModel } from "../../product/models/product.model.js";
 import { VendorProfileModel } from "../../vendorprofile/models/vendorprofile.model.js";
+
+const MAX_CART_WRITE_ATTEMPTS = 5;
+
+interface ResolvedProductSelection {
+    product: any;
+    variant: any | null;
+    price: number;
+    mrp: number;
+    image: string | undefined;
+    stock: number;
+}
 
 export class CartService {
     private repo: CartRepository;
@@ -9,21 +21,116 @@ export class CartService {
         this.repo = new CartRepository();
     }
 
-    /* 🔥 Get or Create Cart */
-    async getCart(userId: string) {
-        let cart = await this.repo.findByUser(userId);
+    private assertPositiveInteger(quantity: number) {
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            throw new Error("Quantity must be a positive integer");
+        }
+    }
 
-        if (!cart) {
-            cart = await this.repo.create(userId);
+    private isProductAvailable(product: any): boolean {
+        if (product.isActive === false) return false;
+        if (!product.availability || product.availability.type !== "scheduled") return true;
+
+        const nowInIndia = new Date(
+            new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+        );
+        const currentMinutes = nowInIndia.getHours() * 60 + nowInIndia.getMinutes();
+        const from = Number(product.availability.fromMinutes);
+        const to = Number(product.availability.toMinutes);
+        if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
+
+        return from <= to
+            ? currentMinutes >= from && currentMinutes <= to
+            : currentMinutes >= from || currentMinutes <= to;
+    }
+
+    private async resolveSelection(
+        productId: string,
+        variantId?: string | null
+    ): Promise<ResolvedProductSelection> {
+        if (!mongoose.isValidObjectId(productId)) throw new Error("Invalid product ID");
+        if (variantId && !mongoose.isValidObjectId(variantId)) throw new Error("Invalid variant ID");
+
+        const product: any = await ProductModel.findById(productId);
+        if (!product) throw new Error("Product not found");
+        if (!this.isProductAvailable(product)) throw new Error("Product is not currently available");
+
+        const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
+        let variant: any | null = null;
+        if (variantId) {
+            // Product-scoped lookup is required because legacy products can share a variant id.
+            variant = product.variants?.id(variantId) || null;
+            if (!variant) throw new Error("Variant not found for this product");
+        } else if (hasVariants) {
+            throw new Error("Variant ID is required for this product");
         }
 
-        // Populate product details
-        await cart.populate({
-            path: "items.product",
-            model: "Product",
-        });
+        const price = Number(
+            variant
+                ? variant.customerSellingPrice ?? variant.price ?? product.customerSellingPrice ?? product.price ?? variant.mrp ?? product.mrp
+                : product.customerSellingPrice ?? product.price ?? product.mrp
+        );
+        const mrp = Number(variant?.mrp ?? product.mrp ?? price);
+        const stock = Number(variant ? variant.stock ?? 0 : product.stock ?? 0);
 
-        // Get unique vendor ids
+        if (!Number.isFinite(price) || price < 0) throw new Error("Invalid product selling price");
+        if (Number.isFinite(mrp) && mrp > 0 && price > mrp) {
+            throw new Error("Customer selling price cannot exceed MRP");
+        }
+        if (!Number.isFinite(stock) || stock < 0) throw new Error("Invalid product stock");
+
+        return {
+            product,
+            variant,
+            price,
+            mrp: Number.isFinite(mrp) && mrp >= 0 ? mrp : price,
+            image: variant?.images?.[0]?.url || product.images?.[0]?.url,
+            stock,
+        };
+    }
+
+    private isSameLine(item: any, productId: string, variantId?: string | null) {
+        return item.product.toString() === productId &&
+            (item.variant?.toString() || undefined) === (variantId || undefined);
+    }
+
+    private applyCurrentPricing(item: any, selection: ResolvedProductSelection) {
+        item.price = selection.price;
+        item.customerSellingPrice = selection.price;
+        item.mrp = selection.mrp;
+        item.name = selection.product.name;
+        item.image = selection.image;
+        item.gstPercent = Number(selection.product.gst?.gstPercent || 0);
+        // gstAmount is a unit amount; the model multiplies it by quantity.
+        item.gstAmount = Number(selection.product.gst?.gstAmount || 0);
+        item.total = selection.price * item.quantity;
+    }
+
+    private async saveWithRetry<T>(
+        userId: string,
+        mutate: (cart: any) => T | Promise<T>
+    ): Promise<T> {
+        for (let attempt = 1; attempt <= MAX_CART_WRITE_ATTEMPTS; attempt++) {
+            const cart = await this.repo.findOrCreate(userId);
+            try {
+                const result = await mutate(cart);
+                await this.repo.save(cart);
+                return result;
+            } catch (error) {
+                if (error instanceof mongoose.Error.VersionError && attempt < MAX_CART_WRITE_ATTEMPTS) {
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        throw new Error("Cart was updated concurrently; please retry");
+    }
+
+    async getCart(userId: string) {
+        const cart = await this.repo.findOrCreate(userId);
+        await cart.populate({ path: "items.product", model: "Product" });
+
         const vendorUserIds = [
             ...new Set(
                 cart.items
@@ -32,12 +139,7 @@ export class CartService {
             ),
         ];
 
-        // Fetch all vendors in one query
-        const vendors = await VendorProfileModel.find({
-            user: { $in: vendorUserIds },
-        }).lean();
-
-        // Create lookup map
+        const vendors = await VendorProfileModel.find({ user: { $in: vendorUserIds } }).lean();
         const vendorMap = new Map(
             vendors.map((vendor) => [
                 vendor.user.toString(),
@@ -52,10 +154,8 @@ export class CartService {
             ])
         );
 
-        // Attach vendor details to each item
         const items = cart.items.map((item: any) => {
             const product = item.product;
-
             return {
                 ...item.toObject(),
                 vendor: product?.vendorId
@@ -64,121 +164,80 @@ export class CartService {
             };
         });
 
-        return {
-            ...cart.toObject(),
-            items,
-        };
+        return { ...cart.toObject(), items };
     }
 
-    /* 🔥 Add to Cart */
     async addToCart(userId: string, data: any) {
         const { productId, variantId, quantity = 1 } = data;
+        this.assertPositiveInteger(quantity);
+        const selection = await this.resolveSelection(productId, variantId);
 
-        let cart = await this.repo.findByUser(userId);
-        if (!cart) cart = await this.repo.create(userId);
+        return this.saveWithRetry(userId, (cart) => {
+            const existingItem = cart.items.find((item: any) =>
+                this.isSameLine(item, productId, variantId)
+            );
+            const resultingQuantity = Number(existingItem?.quantity || 0) + quantity;
+            if (resultingQuantity > selection.stock) throw new Error("Insufficient stock");
 
-        const product: any = await ProductModel.findById(productId);
-        if (!product) throw new Error("Product not found");
+            if (existingItem) {
+                existingItem.quantity = resultingQuantity;
+                this.applyCurrentPricing(existingItem, selection);
+                return existingItem;
+            }
 
-        let price = product.customerSellingPrice ?? product.price ?? product.mrp;
-        let name = product.name;
-        let image = product.images?.[0]?.url;
-
-        if (variantId) {
-            const variant = product.variants.id(variantId);
-            if (!variant) throw new Error("Variant not found");
-
-            price = variant.customerSellingPrice ?? variant.price ?? price;
-            image = variant.images?.[0]?.url || image;
-        }
-
-        let cartItem: any;
-
-        const existingItem = cart.items.find(
-            (i: any) =>
-                i.product.toString() === productId &&
-                i.variant?.toString() === variantId
-        );
-
-        if (existingItem) {
-            existingItem.quantity += quantity;
-            const unitPrice = existingItem.customerSellingPrice ?? existingItem.price;
-            existingItem.total = unitPrice * existingItem.quantity;
-            cartItem = existingItem;
-        } else {
-            cartItem = {
+            cart.items.push({
                 product: productId,
-                variant: variantId,
+                ...(variantId ? { variant: variantId } : {}),
                 quantity,
-                price,
-                customerSellingPrice: price,
-                name,
-                image,
-                total: price * quantity,
-                gstPercent: product.gst?.gstPercent || 0,
-                gstAmount: product.gst?.gstAmount || 0,
-            };
+                price: selection.price,
+                customerSellingPrice: selection.price,
+                mrp: selection.mrp,
+                name: selection.product.name,
+                image: selection.image,
+                total: selection.price * quantity,
+                gstPercent: Number(selection.product.gst?.gstPercent || 0),
+                gstAmount: Number(selection.product.gst?.gstAmount || 0),
+            });
 
-            cart.items.push(cartItem);
-        }
-
-        await cart.save();
-
-        const savedItem = cart.items.find(
-            (i: any) =>
-                i.product.toString() === productId &&
-                i.variant?.toString() === variantId
-        );
-
-        return savedItem;
+            return cart.items[cart.items.length - 1];
+        });
     }
 
-    /* 🔥 Update Quantity */
-    async updateQuantity(
-        userId: string,
-        itemId: string,
-        quantity: number
-    ) {
-        const cart = await this.repo.findByUser(userId);
+    async updateQuantity(userId: string, itemId: string, quantity: number) {
+        this.assertPositiveInteger(quantity);
+        if (!mongoose.isValidObjectId(itemId)) throw new Error("Invalid cart item ID");
 
-        if (!cart) {
-            throw new Error("Cart not found");
-        }
+        return this.saveWithRetry(userId, async (cart) => {
+            const item = cart.items.find((candidate: any) => candidate._id.toString() === itemId);
+            if (!item) throw new Error("Item not found");
 
-        const item = cart.items.find(
-            (i: any) => i._id.toString() === itemId
-        );
+            const selection = await this.resolveSelection(
+                item.product.toString(),
+                item.variant?.toString()
+            );
+            if (quantity > selection.stock) throw new Error("Insufficient stock");
 
-        if (!item) {
-            throw new Error("Item not found");
-        }
-
-        item.quantity = quantity;
-        const unitPrice = item.customerSellingPrice ?? item.price;
-        item.total = unitPrice * quantity;
-
-        await this.repo.save(cart);
-
-        const updatedItem = cart.items.find(
-            (i: any) => i._id.toString() === itemId
-        );
-
-        return updatedItem;
+            item.quantity = quantity;
+            this.applyCurrentPricing(item, selection);
+            return item;
+        });
     }
-    /* 🔥 Remove Item */
+
     async removeItem(userId: string, itemId: string) {
-        const cart = await this.repo.findByUser(userId);
-        if (!cart) throw new Error("Cart not found");
+        if (!mongoose.isValidObjectId(itemId)) throw new Error("Invalid cart item ID");
 
-        cart.items = cart.items.filter(
-            (i: any) => i._id.toString() !== itemId
-        );
-
-        return await this.repo.save(cart);
+        return this.saveWithRetry(userId, (cart) => {
+            const originalLength = cart.items.length;
+            cart.items = cart.items.filter((item: any) => item._id.toString() !== itemId);
+            if (cart.items.length === originalLength) throw new Error("Item not found");
+            return cart;
+        });
     }
 
-    /* 🔥 Clear Cart */
     async clearCart(userId: string) {
-        return await this.repo.clear(userId);
+        return this.saveWithRetry(userId, (cart) => {
+            cart.items = [];
+            return cart;
+        });
     }
 }

@@ -81,7 +81,7 @@ export class CartController {
 
             const { quantity } = req.body;
 
-            if (!quantity || quantity < 1) {
+            if (!Number.isInteger(quantity) || quantity < 1) {
                 return res
                     .status(400)
                     .json(ResponseUtil.badRequest("Valid quantity required"));
