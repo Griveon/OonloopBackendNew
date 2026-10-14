@@ -315,16 +315,19 @@ export class ProductRepository {
     }
 
     async findMostViewed(options: {
-        limit?: number;
-        page?: number;
-        pincode?: string;
-        vendorId?: string;
-        categoryId?: string;
-        minViews?: number;
+        limit?: number | undefined;
+        page?: number | undefined;
+        pincode?: string | undefined;
+        vendorId?: string | undefined;
+        categoryId?: string | undefined;
+        minViews?: number | undefined;
     } = {}) {
         const page = Math.max(Number(options.page) || 1, 1);
-        const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 100);
-        const skip = (page - 1) * limit;
+        const limit =
+            options.limit !== undefined && Number(options.limit) > 0
+                ? Number(options.limit)
+                : undefined;
+        const skip = limit ? (page - 1) * limit : 0;
 
         const filter: any = {
             isActive: true,
@@ -338,7 +341,7 @@ export class ProductRepository {
 
             const vendorIds = vendors.map((v) => v.user);
             if (vendorIds.length === 0) {
-                return { items: [], total: 0, page, limit };
+                return { items: [], total: 0, page, limit: limit ?? 0 };
             }
             filter.vendorId = { $in: vendorIds };
         } else if (options.vendorId) {
@@ -354,11 +357,17 @@ export class ProductRepository {
             filter.viewCount = { $gte: minViews };
         }
 
+        let query = ProductModel.find(filter).sort({ viewCount: -1, _id: 1 });
+
+        if (skip > 0) {
+            query = query.skip(skip);
+        }
+        if (limit) {
+            query = query.limit(limit);
+        }
+
         const [items, total] = await Promise.all([
-            ProductModel.find(filter)
-                .sort({ viewCount: -1, _id: 1 })
-                .skip(skip)
-                .limit(limit)
+            query
                 .populate("category")
                 .populate("productCategory")
                 .populate("unit")
@@ -368,20 +377,23 @@ export class ProductRepository {
             ProductModel.countDocuments(filter),
         ]);
 
-        return { items, total, page, limit };
+        return { items, total, page, limit: limit ?? total };
     }
 
     async findMostBought(options: {
-        limit?: number;
-        page?: number;
-        pincode?: string;
-        vendorId?: string;
-        categoryId?: string;
-        minSold?: number;
+        limit?: number | undefined;
+        page?: number | undefined;
+        pincode?: string | undefined;
+        vendorId?: string | undefined;
+        categoryId?: string | undefined;
+        minSold?: number | undefined;
     } = {}) {
         const page = Math.max(Number(options.page) || 1, 1);
-        const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 100);
-        const skip = (page - 1) * limit;
+        const limit =
+            options.limit !== undefined && Number(options.limit) > 0
+                ? Number(options.limit)
+                : undefined;
+        const skip = limit ? (page - 1) * limit : 0;
 
         const filter: any = {
             isActive: true,
@@ -395,7 +407,7 @@ export class ProductRepository {
 
             const vendorIds = vendors.map((v) => v.user);
             if (vendorIds.length === 0) {
-                return { items: [], total: 0, page, limit };
+                return { items: [], total: 0, page, limit: limit ?? 0 };
             }
             filter.vendorId = { $in: vendorIds };
         } else if (options.vendorId) {
@@ -411,11 +423,17 @@ export class ProductRepository {
             filter.soldCount = { $gte: minSold };
         }
 
+        let query = ProductModel.find(filter).sort({ soldCount: -1, _id: 1 });
+
+        if (skip > 0) {
+            query = query.skip(skip);
+        }
+        if (limit) {
+            query = query.limit(limit);
+        }
+
         const [items, total] = await Promise.all([
-            ProductModel.find(filter)
-                .sort({ soldCount: -1, _id: 1 })
-                .skip(skip)
-                .limit(limit)
+            query
                 .populate("category")
                 .populate("productCategory")
                 .populate("unit")
@@ -425,6 +443,6 @@ export class ProductRepository {
             ProductModel.countDocuments(filter),
         ]);
 
-        return { items, total, page, limit };
+        return { items, total, page, limit: limit ?? total };
     }
 }

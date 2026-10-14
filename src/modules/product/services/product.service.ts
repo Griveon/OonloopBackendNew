@@ -662,11 +662,21 @@ export class ProductService {
 
     async getMostViewed(query: any = {}) {
         const page = Math.max(Number(query.page) || 1, 1);
-        const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
-        const skip = (page - 1) * limit;
+        const hasLimit =
+            query.limit !== undefined &&
+            query.limit !== "" &&
+            query.limit !== null &&
+            query.limit !== "unlimited" &&
+            query.limit !== "all";
+        const parsedLimit = hasLimit ? Number(query.limit) : undefined;
+        const limit =
+            parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0
+                ? parsedLimit
+                : undefined;
+        const skip = limit ? (page - 1) * limit : 0;
 
         const result = await this.repo.findMostViewed({
-            limit,
+            ...(limit !== undefined ? { limit } : {}),
             page,
             pincode: query.pincode,
             vendorId: query.vendorId,
@@ -682,18 +692,28 @@ export class ProductService {
             items,
             total: result.total,
             page: result.page,
-            limit: result.limit,
-            totalPages: Math.ceil(result.total / limit),
+            limit: result.limit ?? limit ?? result.total,
+            totalPages: limit ? Math.ceil(result.total / limit) : (result.total > 0 ? 1 : 0),
         };
     }
 
     async getMostBought(query: any = {}) {
         const page = Math.max(Number(query.page) || 1, 1);
-        const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
-        const skip = (page - 1) * limit;
+        const hasLimit =
+            query.limit !== undefined &&
+            query.limit !== "" &&
+            query.limit !== null &&
+            query.limit !== "unlimited" &&
+            query.limit !== "all";
+        const parsedLimit = hasLimit ? Number(query.limit) : undefined;
+        const limit =
+            parsedLimit !== undefined && Number.isFinite(parsedLimit) && parsedLimit > 0
+                ? parsedLimit
+                : undefined;
+        const skip = limit ? (page - 1) * limit : 0;
 
         const result = await this.repo.findMostBought({
-            limit,
+            ...(limit !== undefined ? { limit } : {}),
             page,
             pincode: query.pincode,
             vendorId: query.vendorId,
@@ -709,8 +729,8 @@ export class ProductService {
             items,
             total: result.total,
             page: result.page,
-            limit: result.limit,
-            totalPages: Math.ceil(result.total / limit),
+            limit: result.limit ?? limit ?? result.total,
+            totalPages: limit ? Math.ceil(result.total / limit) : (result.total > 0 ? 1 : 0),
         };
     }
 }

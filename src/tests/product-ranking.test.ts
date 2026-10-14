@@ -198,6 +198,35 @@ test("most bought listing provides dynamic rankings and normalized counts", asyn
     assert.equal(result.items[1].soldCount, 60);
 });
 
+test("most viewed and most bought pass undefined limit for unlimited requests", async () => {
+    const service: any = new ProductService();
+    let viewedOptionsPassed: any;
+    let boughtOptionsPassed: any;
+
+    service.repo = {
+        findMostViewed: async (options: any) => {
+            viewedOptionsPassed = options;
+            return { items: [], total: 0, page: 1, limit: 0 };
+        },
+        findMostBought: async (options: any) => {
+            boughtOptionsPassed = options;
+            return { items: [], total: 0, page: 1, limit: 0 };
+        },
+    };
+
+    await service.getMostViewed({});
+    assert.equal(viewedOptionsPassed.limit, undefined);
+
+    await service.getMostViewed({ limit: "unlimited" });
+    assert.equal(viewedOptionsPassed.limit, undefined);
+
+    await service.getMostBought({});
+    assert.equal(boughtOptionsPassed.limit, undefined);
+
+    await service.getMostBought({ limit: "all" });
+    assert.equal(boughtOptionsPassed.limit, undefined);
+});
+
 test("recordOrderSales increments product soldCount by total purchased quantity", async () => {
     const orderId = new Types.ObjectId();
     const prodA = new Types.ObjectId();
