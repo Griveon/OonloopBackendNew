@@ -17,6 +17,8 @@ import { VariantImageController } from "../controllers/variantimage.controller.j
 import { ProductVideoController } from "../controllers/productvideo.controller.js";
 
 import { ProductSearchController } from "../controllers/globalproductsearch.controller.js";
+import { optionalAuthMiddleware } from "../../../middlewares/authmiddleware/optional-auth.middleware.js";
+import { productViewGuard } from "../middlewares/productview.middleware.js";
 
 const productRoutes = Router();
 
@@ -61,6 +63,39 @@ productRoutes.get(
 productRoutes.get(
     "/recent_products",
     controller.getRecentProducts
+);
+
+/**
+ * Most viewed products sorted by real customer view activity.
+ */
+productRoutes.get(
+    "/most-viewed",
+    controller.getMostViewed
+);
+
+/**
+ * Most bought products sorted by completed sales quantities.
+ */
+productRoutes.get(
+    "/most-bought",
+    controller.getMostBought
+);
+
+/**
+ * Track customer product-detail view.
+ */
+productRoutes.post(
+    "/:productId/view",
+    optionalAuthMiddleware,
+    productViewGuard,
+    controller.recordView
+);
+
+productRoutes.post(
+    "/view/:productId",
+    optionalAuthMiddleware,
+    productViewGuard,
+    controller.recordView
 );
 
 /**

@@ -149,6 +149,7 @@ export interface IOrder {
     notes?: string;
 
     isActive: boolean;
+    salesCounted?: boolean;
 
     createdAt?: Date;
     updatedAt?: Date;

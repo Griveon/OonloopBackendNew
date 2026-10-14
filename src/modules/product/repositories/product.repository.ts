@@ -305,4 +305,126 @@ export class ProductRepository {
             ],
         };
     }
+
+    async incrementViewCount(id: string) {
+        return await ProductModel.findOneAndUpdate(
+            { _id: id, isActive: true },
+            { $inc: { viewCount: 1 } },
+            { new: true, projection: { _id: 1, viewCount: 1 } }
+        );
+    }
+
+    async findMostViewed(options: {
+        limit?: number;
+        page?: number;
+        pincode?: string;
+        vendorId?: string;
+        categoryId?: string;
+        minViews?: number;
+    } = {}) {
+        const page = Math.max(Number(options.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 100);
+        const skip = (page - 1) * limit;
+
+        const filter: any = {
+            isActive: true,
+            ...this.getAvailableProductFilter(),
+        };
+
+        if (options.pincode?.trim()) {
+            const vendors = await VendorProfileModel.find({
+                "storeLocationAddress.postalCode": options.pincode.trim(),
+            }).select("user");
+
+            const vendorIds = vendors.map((v) => v.user);
+            if (vendorIds.length === 0) {
+                return { items: [], total: 0, page, limit };
+            }
+            filter.vendorId = { $in: vendorIds };
+        } else if (options.vendorId) {
+            filter.vendorId = options.vendorId;
+        }
+
+        if (options.categoryId) {
+            filter.category = options.categoryId;
+        }
+
+        const minViews = options.minViews !== undefined ? options.minViews : 1;
+        if (minViews > 0) {
+            filter.viewCount = { $gte: minViews };
+        }
+
+        const [items, total] = await Promise.all([
+            ProductModel.find(filter)
+                .sort({ viewCount: -1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .populate("category")
+                .populate("productCategory")
+                .populate("unit")
+                .populate("variants.unit")
+                .populate("vendorId", "firstName lastName")
+                .lean(),
+            ProductModel.countDocuments(filter),
+        ]);
+
+        return { items, total, page, limit };
+    }
+
+    async findMostBought(options: {
+        limit?: number;
+        page?: number;
+        pincode?: string;
+        vendorId?: string;
+        categoryId?: string;
+        minSold?: number;
+    } = {}) {
+        const page = Math.max(Number(options.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(options.limit) || 10, 1), 100);
+        const skip = (page - 1) * limit;
+
+        const filter: any = {
+            isActive: true,
+            ...this.getAvailableProductFilter(),
+        };
+
+        if (options.pincode?.trim()) {
+            const vendors = await VendorProfileModel.find({
+                "storeLocationAddress.postalCode": options.pincode.trim(),
+            }).select("user");
+
+            const vendorIds = vendors.map((v) => v.user);
+            if (vendorIds.length === 0) {
+                return { items: [], total: 0, page, limit };
+            }
+            filter.vendorId = { $in: vendorIds };
+        } else if (options.vendorId) {
+            filter.vendorId = options.vendorId;
+        }
+
+        if (options.categoryId) {
+            filter.category = options.categoryId;
+        }
+
+        const minSold = options.minSold !== undefined ? options.minSold : 1;
+        if (minSold > 0) {
+            filter.soldCount = { $gte: minSold };
+        }
+
+        const [items, total] = await Promise.all([
+            ProductModel.find(filter)
+                .sort({ soldCount: -1, _id: 1 })
+                .skip(skip)
+                .limit(limit)
+                .populate("category")
+                .populate("productCategory")
+                .populate("unit")
+                .populate("variants.unit")
+                .populate("vendorId", "firstName lastName")
+                .lean(),
+            ProductModel.countDocuments(filter),
+        ]);
+
+        return { items, total, page, limit };
+    }
 }

@@ -193,6 +193,16 @@ const productSchema = new Schema<IProduct>(
             default: true,
             index: true,
         },
+        viewCount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        soldCount: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
     },
     { timestamps: true }
 );
@@ -230,5 +240,17 @@ productSchema.index({
 
 productSchema.index({
     searchKeywords: 1,
+});
+
+productSchema.index({
+    isActive: 1,
+    viewCount: -1,
+    _id: 1,
+});
+
+productSchema.index({
+    isActive: 1,
+    soldCount: -1,
+    _id: 1,
 });
 export const ProductModel: Model<IProduct> = mongoose.model<IProduct>("Product", productSchema);

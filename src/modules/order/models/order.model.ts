@@ -426,6 +426,12 @@ const orderSchema = new Schema<IOrderDocument>(
             default: true,
             index: true,
         },
+
+        salesCounted: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
     },
     {
         timestamps: true,

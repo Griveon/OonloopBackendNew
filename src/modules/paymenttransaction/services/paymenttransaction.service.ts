@@ -10,6 +10,7 @@ import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js"
 import { FirebaseTokenService } from "../../notification/services/firebasetoken.service.js";
 import mongoose from "mongoose";
 import { CartModel } from "../../cart/models/cart.model.js";
+import { recordOrderSales } from "../../order/services/ordersales.service.js";
 
 export class PaymentTransactionService {
     private repo: PaymentTransactionRepository;
@@ -920,6 +921,10 @@ export class PaymentTransactionService {
         // Avoid duplicate notifications on normal retries. The repository also
         // prevents duplicate payment tracking-history rows.
         if (paymentStatusChanged) {
+            void recordOrderSales(orderId.toString()).catch((err) =>
+                console.error("Failed to record order sales on payment confirmation:", err)
+            );
+
             void Promise.allSettled([
                 this.sendOrderPaidNotificationToVendors(orderId),
                 this.sendOrderPaidNotificationToDrivers(orderId),

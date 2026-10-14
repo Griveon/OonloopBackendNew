@@ -9,6 +9,7 @@ import {
     getDefaultAdditionalHandlingSnapshot,
     type IAdditionalHandlingConfig,
 } from "../utils/pricing.util.js";
+import { isProductAvailableNow } from "../../vendor/utils/timetominutes.util.js";
 import mongoose from "mongoose";
 
 export class ProductService {
@@ -61,6 +62,8 @@ export class ProductService {
     }
 
     async create(data: any) {
+        const { viewCount: _vc, soldCount: _sc, ...safeCreateData } = data || {};
+        data = safeCreateData;
         const slug = await this.generateUniqueSlug(data.name);
 
         // =========================================================
@@ -295,6 +298,8 @@ export class ProductService {
         delete updatePayload.images;
         delete updatePayload.videos;
         delete updatePayload.variants;
+        delete updatePayload.viewCount;
+        delete updatePayload.soldCount;
 
         const pricingCategoryId = updatePayload.category ?? existing.category;
         const additionalHandling = await this.getCategoryAdditionalHandling(pricingCategoryId);
@@ -615,6 +620,97 @@ export class ProductService {
             toTime,
             fromMinutes: this.timeToMinutes(fromTime),
             toMinutes: this.timeToMinutes(toTime),
+        };
+    }
+
+    async recordView(id: string) {
+        if (!mongoose.isValidObjectId(id)) {
+            throw new Error("Invalid product ID");
+        }
+
+        const product = await this.repo.incrementViewCount(id);
+        if (!product) {
+            throw new Error("Product not found or inactive");
+        }
+
+        return { productId: product._id.toString() };
+    }
+
+    private formatProductForCustomer(product: any, rank?: number) {
+        const productObj = (product as any).toObject ? (product as any).toObject() : { ...product };
+
+        const customerSellingPrice = productObj.customerSellingPrice ?? productObj.price ?? 0;
+        productObj.customerSellingPrice = customerSellingPrice;
+
+        if (Array.isArray(productObj.variants)) {
+            productObj.variants = productObj.variants.map((v: any) => ({
+                ...v,
+                customerSellingPrice: v.customerSellingPrice ?? v.price ?? 0,
+            }));
+        }
+
+        productObj.viewCount = Number(productObj.viewCount ?? 0);
+        productObj.soldCount = Number(productObj.soldCount ?? 0);
+        productObj.isAvailableNow = isProductAvailableNow(productObj.availability);
+
+        if (rank !== undefined) {
+            productObj.rank = rank;
+        }
+
+        return productObj;
+    }
+
+    async getMostViewed(query: any = {}) {
+        const page = Math.max(Number(query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+        const skip = (page - 1) * limit;
+
+        const result = await this.repo.findMostViewed({
+            limit,
+            page,
+            pincode: query.pincode,
+            vendorId: query.vendorId,
+            categoryId: query.categoryId || query.category,
+            minViews: query.minViews !== undefined ? Number(query.minViews) : 1,
+        });
+
+        const items = result.items.map((product: any, index: number) =>
+            this.formatProductForCustomer(product, skip + index + 1)
+        );
+
+        return {
+            items,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages: Math.ceil(result.total / limit),
+        };
+    }
+
+    async getMostBought(query: any = {}) {
+        const page = Math.max(Number(query.page) || 1, 1);
+        const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100);
+        const skip = (page - 1) * limit;
+
+        const result = await this.repo.findMostBought({
+            limit,
+            page,
+            pincode: query.pincode,
+            vendorId: query.vendorId,
+            categoryId: query.categoryId || query.category,
+            minSold: query.minSold !== undefined ? Number(query.minSold) : 1,
+        });
+
+        const items = result.items.map((product: any, index: number) =>
+            this.formatProductForCustomer(product, skip + index + 1)
+        );
+
+        return {
+            items,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+            totalPages: Math.ceil(result.total / limit),
         };
     }
 }

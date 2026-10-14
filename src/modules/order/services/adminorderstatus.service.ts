@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { AdminOrderStatusRepository } from "../repository/adminorderstatus.repository.js";
+import { recordOrderSales, revertOrderSales } from "./ordersales.service.js";
 
 const PARENT_STATUSES = [
     "pending",
@@ -210,6 +211,16 @@ export class AdminOrderStatusService {
 
         const updated = await this.repo.updateParentOrder(orderId, updateData);
         if (!updated) throw new Error("Order not found");
+
+        if (effectiveStatus === "cancelled" || effectiveStatus === "returned" || paymentStatus === "refunded") {
+            void revertOrderSales(orderId).catch((err) =>
+                console.error("Failed to revert order sales on admin cancellation:", err)
+            );
+        } else if (effectiveStatus === "delivered" || effectiveStatus === "placed" || paymentStatus === "success") {
+            void recordOrderSales(orderId).catch((err) =>
+                console.error("Failed to record order sales on admin status update:", err)
+            );
+        }
 
         return {
             success: true,

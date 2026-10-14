@@ -371,4 +371,68 @@ export class ProductController {
                 .json(ResponseUtil.badRequest(error.message));
         }
     };
+
+    recordView = async (req: Request, res: Response) => {
+        try {
+            const productId = this.getParam(req.params.productId);
+            if (!productId) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("Product ID is required"));
+            }
+
+            const result = await this.service.recordView(productId);
+            return res
+                .status(200)
+                .json(ResponseUtil.success("Product view recorded successfully", result));
+        } catch (error: any) {
+            return res
+                .status(400)
+                .json(ResponseUtil.badRequest(error.message));
+        }
+    };
+
+    getMostViewed = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.getMostViewed(req.query);
+
+            return res.status(200).json({
+                success: true,
+                message: "Most viewed products fetched successfully",
+                data: result.items,
+                meta: {
+                    page: result.page,
+                    limit: result.limit,
+                    total: result.total,
+                    totalPages: result.totalPages,
+                },
+            });
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
+
+    getMostBought = async (req: Request, res: Response) => {
+        try {
+            const result = await this.service.getMostBought(req.query);
+
+            return res.status(200).json({
+                success: true,
+                message: "Most bought products fetched successfully",
+                data: result.items,
+                meta: {
+                    page: result.page,
+                    limit: result.limit,
+                    total: result.total,
+                    totalPages: result.totalPages,
+                },
+            });
+        } catch (error: any) {
+            return res
+                .status(500)
+                .json(ResponseUtil.serverError(error.message));
+        }
+    };
 }

@@ -94,6 +94,8 @@ export interface IProduct {
     minQty?: number;
     slug: string;
     gst?: IGSTDetails;
+    viewCount?: number;
+    soldCount?: number;
     availability: any;
     searchKeywords: any;
 }

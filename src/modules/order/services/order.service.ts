@@ -4,6 +4,7 @@ import { generateOrderNumber } from "../utils/ordernumbergenerate.util.js";
 import type { OrderStatus } from "../interfaces/order.interface.js";
 import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js";
 import { Types } from "mongoose";
+import { recordOrderSales } from "./ordersales.service.js";
 import {
     AdminOrdersRepository,
 } from "../repository/adminorders.repository.js";
@@ -369,6 +370,14 @@ export class OrderService {
 
                 const vendorOrders =
                     await this.createVendorOrdersFromParentOrder(parentOrder);
+
+                if (parentOrder.status === "placed" || parentOrder.paymentStatus === "success") {
+                    try {
+                        await recordOrderSales(parentOrder._id);
+                    } catch (salesErr) {
+                        console.error("Failed to record live order sales:", salesErr);
+                    }
+                }
 
                 return {
                     order: parentOrder,

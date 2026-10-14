@@ -94,6 +94,7 @@ router.use("/vendorcoupon", vendorCouponRoutes);
 router.use("/unit", unitRoutes);
 
 router.use("/product", productRoutes);
+router.use("/products", productRoutes);
 
 router.use("/vendordashboard", vendorDashboardCountsRoutes);
 
