@@ -169,12 +169,23 @@ export class OrderService {
         const preparedItems: any[] = [];
         const vendorIdsSet = new Set<string>();
 
+        const productIds = [
+            ...new Set(
+                data.items
+                    .map((item: any) => item.product?.toString())
+                    .filter(Boolean)
+            ),
+        ];
+
+        const products = await ProductModel.find({ _id: { $in: productIds } }).lean();
+        const productMap = new Map(products.map((p: any) => [p._id.toString(), p]));
+
         for (const item of data.items) {
             if (!item.product) {
                 throw new Error("Product is required in order item");
             }
 
-            const product: any = await ProductModel.findById(item.product);
+            const product: any = productMap.get(item.product.toString());
 
             if (!product) {
                 throw new Error("Product not found");
@@ -456,7 +467,7 @@ export class OrderService {
     }
 
     async update(id: any, data: any) {
-        const existing = await this.repo.findById(id);
+        const existing = await this.repo.findRawById(id);
 
         if (!existing) {
             throw new Error("Order not found");
@@ -498,7 +509,7 @@ export class OrderService {
     }
 
     async updateStatus(id: any, status: OrderStatus) {
-        const existing = await this.repo.findById(id);
+        const existing = await this.repo.findRawById(id);
 
         if (!existing) {
             throw new Error("Order not found");
@@ -599,7 +610,7 @@ export class OrderService {
     }
 
     async delete(id: any) {
-        const existing = await this.repo.findById(id);
+        const existing = await this.repo.findRawById(id);
 
         if (!existing) {
             throw new Error("Order not found");

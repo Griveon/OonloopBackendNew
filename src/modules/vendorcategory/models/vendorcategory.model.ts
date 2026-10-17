@@ -39,7 +39,6 @@ const VendorCategorySchema: Schema<IVendorCategoryDocument> =
                 type: String,
                 required: true,
                 trim: true,
-                index: true,
             },
 
             // keep ready for future

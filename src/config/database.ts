@@ -9,7 +9,15 @@ export async function connectDatabase() {
     try {
         console.log("MongoDB URI:", MONGO_URI);
 
-        await mongoose.connect(MONGO_URI);
+        const maxPoolSize = Number(process.env.MONGO_MAX_POOL_SIZE || 50);
+        const minPoolSize = Number(process.env.MONGO_MIN_POOL_SIZE || 10);
+
+        await mongoose.connect(MONGO_URI, {
+            maxPoolSize,
+            minPoolSize,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
 
         console.log("MongoDB connected successfully");
     } catch (error) {

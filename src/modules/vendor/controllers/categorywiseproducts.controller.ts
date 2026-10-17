@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import mongoose from "mongoose";
 import { CategoryProductsService } from "../services/categorywiseproducts.service.js";
+import { VendorCategoryModel } from "../../vendorcategory/models/vendorcategory.model.js";
 
 export class CategoryProductsController {
     private service: CategoryProductsService;
@@ -12,11 +13,25 @@ export class CategoryProductsController {
     getSubCategories = async (req: Request, res: Response) => {
         try {
             const { categoryId = "all" } = req.query;
+            let resolvedCategoryId = String(categoryId);
+            if (
+                resolvedCategoryId === "restaurant" ||
+                resolvedCategoryId === "restaurants"
+            ) {
+                const restCat = await VendorCategoryModel.findOne({
+                    name: { $regex: /restaurant/i },
+                    isActive: true,
+                }).select("_id").lean();
+
+                if (restCat) {
+                    resolvedCategoryId = restCat._id.toString();
+                }
+            }
 
             if (
-                categoryId &&
-                categoryId !== "all" &&
-                !mongoose.Types.ObjectId.isValid(String(categoryId))
+                resolvedCategoryId &&
+                resolvedCategoryId !== "all" &&
+                !mongoose.Types.ObjectId.isValid(resolvedCategoryId)
             ) {
                 return res.status(400).json({
                     success: false,
@@ -24,7 +39,7 @@ export class CategoryProductsController {
                 });
             }
 
-            const data = await this.service.getSubCategories(String(categoryId));
+            const data = await this.service.getSubCategories(resolvedCategoryId);
 
             return res.status(200).json({
                 success: true,
@@ -146,15 +161,14 @@ export class CategoryProductsController {
                 latitude,
                 longitude,
                 maxDistance = 10000,
+                page = 1,
+                limit = 12,
                 search = "",
+                category,
+                l2CategoryName,
+                l2CategoryId,
+                productCategoryId,
             } = req.query;
-
-            if (!categoryId) {
-                return res.status(400).json({
-                    success: false,
-                    message: "categoryId is required",
-                });
-            }
 
             if (!latitude || !longitude) {
                 return res.status(400).json({
@@ -163,25 +177,47 @@ export class CategoryProductsController {
                 });
             }
 
-            if (!mongoose.Types.ObjectId.isValid(String(categoryId))) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid categoryId",
-                });
-            }
+            const effectiveCategory =
+                categoryId ||
+                category ||
+                l2CategoryName ||
+                l2CategoryId ||
+                productCategoryId;
 
-            const data = await this.service.getRestaurants(
-                String(categoryId),
+            const categoryFilter =
+                effectiveCategory && String(effectiveCategory) !== "all"
+                    ? String(effectiveCategory)
+                    : undefined;
+
+            const result = await this.service.getRestaurants(
+                categoryFilter,
                 Number(latitude),
                 Number(longitude),
                 Number(maxDistance),
-                String(search)
+                String(search),
+                Number(page),
+                Number(limit)
             );
+
+            const restaurantsList = Array.isArray(result)
+                ? result
+                : (result?.restaurants || []);
+            const allCategories = result?.categories || [];
+            const categoryList = result?.categoryList || [];
+            const meta = {
+                page: result?.page || Number(page) || 1,
+                limit: result?.limit || Number(limit) || 12,
+                total: result?.total ?? restaurantsList.length,
+                totalPages: result?.totalPages ?? (restaurantsList.length > 0 ? 1 : 0),
+            };
 
             return res.status(200).json({
                 success: true,
                 message: "Restaurants fetched successfully",
-                data,
+                data: restaurantsList,
+                categories: allCategories,
+                categoryList,
+                meta,
             });
         } catch (error: any) {
             return res.status(500).json({

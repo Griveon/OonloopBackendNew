@@ -2,7 +2,9 @@ import { ProductCategoryModel } from "../../productcategories/models/productcate
 import { isProductAvailableNow } from "../../vendor/utils/timetominutes.util.js";
 import { VendorCategoryModel } from "../../vendorcategory/models/vendorcategory.model.js";
 import { ProductModel } from "../models/product.model.js";
+import "../../brand/models/brand.model.js";
 import { normalizeSearch, getSearchTerms, escapeRegex } from "../utils/productsearch.util.js";
+import { appCache } from "../../../utils/cache.util.js";
 
 export class ProductSearchRepository {
 
@@ -49,56 +51,38 @@ export class ProductSearchRepository {
 
         const categoryRegex = regexTerms;
 
-        const [
-            vendorCategories,
-            productCategories,
-        ] = await Promise.all([
-            VendorCategoryModel.find({
-                isActive: true,
-                $or: categoryRegex.flatMap(
-                    (regex) => [
-                        {
-                            name: regex,
-                        },
-                    ]
-                ),
-            })
-                .select("_id")
-                .lean(),
+        const cacheCatKey = `search_cats_${normalizedKeyword}`;
+        let vendorCategoryIds: any[] | undefined = appCache.get(cacheCatKey + "_vc");
+        let productCategoryIds: any[] | undefined = appCache.get(cacheCatKey + "_pc");
 
-            ProductCategoryModel.find({
-                isActive: true,
-                $or: categoryRegex.flatMap(
-                    (regex) => [
-                        {
-                            "l1Category.name": regex,
-                        },
-                        {
-                            "l2Category.name": regex,
-                        },
-                        {
-                            "l3Category.name": regex,
-                        },
-                        {
-                            "l4Category.name": regex,
-                        },
-                    ]
-                ),
-            })
-                .select("_id vendorCategory")
-                .lean(),
-        ]);
+        if (!vendorCategoryIds || !productCategoryIds) {
+            const [vendorCategories, productCategories] = await Promise.all([
+                VendorCategoryModel.find({
+                    isActive: true,
+                    $or: categoryRegex.flatMap((regex) => [{ name: regex }]),
+                })
+                    .select("_id")
+                    .lean(),
 
-        const vendorCategoryIds =
-            vendorCategories.map(
-                (category) => category._id
-            );
+                ProductCategoryModel.find({
+                    isActive: true,
+                    $or: categoryRegex.flatMap((regex) => [
+                        { "l1Category.name": regex },
+                        { "l2Category.name": regex },
+                        { "l3Category.name": regex },
+                        { "l4Category.name": regex },
+                    ]),
+                })
+                    .select("_id")
+                    .lean(),
+            ]);
 
+            vendorCategoryIds = vendorCategories.map((category) => category._id);
+            productCategoryIds = productCategories.map((category) => category._id);
 
-        const productCategoryIds =
-            productCategories.map(
-                (category) => category._id
-            );
+            appCache.set(cacheCatKey + "_vc", vendorCategoryIds, 300);
+            appCache.set(cacheCatKey + "_pc", productCategoryIds, 300);
+        }
 
         const productConditions: any[] = [];
 
@@ -162,58 +146,23 @@ export class ProductSearchRepository {
             $or: productConditions,
         };
 
-        const [products, total] =
+        const [candidates, total] =
             await Promise.all([
                 ProductModel.find(query)
-                    .populate("productCategory")
-                    .populate("category")
-                    .populate("unit")
-                    .populate({
-                        path: "attributes.brand",
-                    })
-                    .populate({
-                        path: "variants.unit",
-                        select:
-                            "name shortName symbol unitValue",
-                    })
+                    .select("_id name searchKeywords isFeatured isTrending")
                     .lean(),
 
                 ProductModel.countDocuments(query),
             ]);
 
-        /*
-         * ---------------------------------------------------------
-         * ADD isAvailableNow TO EACH PRODUCT
-         * ---------------------------------------------------------
-         */
-
-        const productsWithAvailability = products.map(
-            (product: any) => ({
-                ...product,
-                customerSellingPrice: product.customerSellingPrice ?? product.price,
-                variants: Array.isArray(product.variants)
-                    ? product.variants.map((v: any) => ({
-                        ...v,
-                        customerSellingPrice: v.customerSellingPrice ?? v.price,
-                    }))
-                    : product.variants,
-
-                isAvailableNow: isProductAvailableNow(
-                    product.availability
-                ),
-            })
-        );
-
         const search = normalizedKeyword;
 
-
-        productsWithAvailability.sort((a: any, b: any) => {
+        candidates.sort((a: any, b: any) => {
             const aName =
                 String(a.name || "").toLowerCase();
 
             const bName =
                 String(b.name || "").toLowerCase();
-
 
             let aScore = 0;
             let bScore = 0;
@@ -252,7 +201,6 @@ export class ProductSearchRepository {
                     .join(" ")
                     .toLowerCase();
 
-
             if (aKeywords.includes(search)) {
                 aScore += 25;
             }
@@ -277,15 +225,57 @@ export class ProductSearchRepository {
                 bScore += 3;
             }
 
-
             return bScore - aScore;
         });
 
-        const paginatedProducts =
-            productsWithAvailability.slice(
-                skip,
-                skip + limit
+        const paginatedCandidates = candidates.slice(
+            skip,
+            skip + limit
+        );
+
+        let paginatedProducts: any[] = [];
+
+        if (paginatedCandidates.length > 0) {
+            const pageIds = paginatedCandidates.map((c) => c._id);
+            const fullProducts = await ProductModel.find({
+                _id: { $in: pageIds },
+            })
+                .populate("productCategory")
+                .populate("category")
+                .populate("unit")
+                .populate({
+                    path: "attributes.brand",
+                })
+                .populate({
+                    path: "variants.unit",
+                    select:
+                        "name shortName symbol unitValue",
+                })
+                .lean();
+
+            const productMap = new Map(
+                fullProducts.map((p: any) => [p._id.toString(), p])
             );
+
+            paginatedProducts = paginatedCandidates
+                .map((c) => productMap.get(c._id.toString()))
+                .filter(Boolean)
+                .map((product: any) => ({
+                    ...product,
+                    customerSellingPrice:
+                        product.customerSellingPrice ?? product.price,
+                    variants: Array.isArray(product.variants)
+                        ? product.variants.map((v: any) => ({
+                            ...v,
+                            customerSellingPrice:
+                                v.customerSellingPrice ?? v.price,
+                        }))
+                        : product.variants,
+                    isAvailableNow: isProductAvailableNow(
+                        product.availability
+                    ),
+                }));
+        }
 
 
         return {

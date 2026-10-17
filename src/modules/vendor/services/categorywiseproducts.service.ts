@@ -155,18 +155,22 @@ export class CategoryProductsService {
     }
 
     async getRestaurants(
-        categoryId: string,
-        lat: number,
-        lng: number,
-        maxDistance: number,
-        search: string
+        categoryId?: string,
+        lat?: number,
+        lng?: number,
+        maxDistance: number = 10000,
+        search: string = "",
+        page: number = 1,
+        limit: number = 12
     ) {
         return this.repo.findRestaurantsByCategory(
             categoryId,
             lat,
             lng,
             maxDistance,
-            search
+            search,
+            page,
+            limit
         );
     }
 }

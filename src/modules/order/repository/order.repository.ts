@@ -18,6 +18,10 @@ export class OrderRepository {
             .populate("gstRuleId");
     }
 
+    async findRawById(id: string) {
+        return await OrderModel.findById(id).lean();
+    }
+
     async findByOrderNumber(orderNumber: string) {
         return await OrderModel.findOne({ orderNumber })
             .populate("user", "firstName lastName email mobileNumber")
@@ -51,7 +55,8 @@ export class OrderRepository {
                 .populate("paymentMethod")
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(limit),
+                .limit(limit)
+                .lean(),
 
             OrderModel.countDocuments(query),
         ]);
@@ -92,7 +97,8 @@ export class OrderRepository {
                 .populate("paymentMethod")
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(limit),
+                .limit(limit)
+                .lean(),
 
             OrderModel.countDocuments(query),
         ]);
@@ -123,7 +129,8 @@ export class OrderRepository {
                 .populate("paymentMethod")
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(limit),
+                .limit(limit)
+                .lean(),
 
             OrderModel.countDocuments(query),
         ]);

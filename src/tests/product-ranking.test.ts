@@ -203,7 +203,7 @@ test("most bought listing provides dynamic rankings and normalized counts", asyn
     assert.equal(result.items[1].soldCount, 60);
 });
 
-test("most viewed and most bought pass undefined limit for unlimited requests", async () => {
+test("most viewed and most bought enforce 50 item limit by default and cap at 50", async () => {
     const service: any = new ProductService();
     let viewedOptionsPassed: any;
     let boughtOptionsPassed: any;
@@ -211,25 +211,34 @@ test("most viewed and most bought pass undefined limit for unlimited requests", 
     service.repo = {
         findMostViewed: async (options: any) => {
             viewedOptionsPassed = options;
-            return { items: [], total: 0, page: 1, limit: 0 };
+            return { items: [], total: 0, page: 1, limit: options.limit };
         },
         findMostBought: async (options: any) => {
             boughtOptionsPassed = options;
-            return { items: [], total: 0, page: 1, limit: 0 };
+            return { items: [], total: 0, page: 1, limit: options.limit };
         },
     };
 
     await service.getMostViewed({});
-    assert.equal(viewedOptionsPassed.limit, undefined);
+    assert.equal(viewedOptionsPassed.limit, 50);
 
     await service.getMostViewed({ limit: "unlimited" });
-    assert.equal(viewedOptionsPassed.limit, undefined);
+    assert.equal(viewedOptionsPassed.limit, 50);
+
+    await service.getMostViewed({ limit: 100 });
+    assert.equal(viewedOptionsPassed.limit, 50);
+
+    await service.getMostViewed({ limit: 20 });
+    assert.equal(viewedOptionsPassed.limit, 20);
 
     await service.getMostBought({});
-    assert.equal(boughtOptionsPassed.limit, undefined);
+    assert.equal(boughtOptionsPassed.limit, 50);
 
     await service.getMostBought({ limit: "all" });
-    assert.equal(boughtOptionsPassed.limit, undefined);
+    assert.equal(boughtOptionsPassed.limit, 50);
+
+    await service.getMostBought({ limit: 30 });
+    assert.equal(boughtOptionsPassed.limit, 30);
 });
 
 test("recordOrderSales increments product soldCount by total purchased quantity", async () => {

@@ -21,7 +21,7 @@ export class ProductRepository {
     async findAll(filter: any = {}, page = 1, limit = 10) {
         const skip = (page - 1) * limit;
         const [items, total] = await Promise.all([
-            ProductModel.find(filter).skip(skip).limit(limit),
+            ProductModel.find(filter).skip(skip).limit(limit).lean(),
             ProductModel.countDocuments(filter)
         ]);
         return { items, total };
@@ -31,7 +31,11 @@ export class ProductRepository {
         const skip = (page - 1) * limit;
 
         const [items, total] = await Promise.all([
-            ProductModel.find(filter).skip(skip).limit(limit),
+            ProductModel.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
             ProductModel.countDocuments(filter),
         ]);
 
@@ -85,7 +89,8 @@ export class ProductRepository {
             ProductModel.find(filter)
                 .skip(skip)
                 .limit(limit)
-                .sort({ createdAt: -1 }),
+                .sort({ createdAt: -1 })
+                .lean(),
 
             ProductModel.countDocuments(filter),
         ]);
@@ -174,7 +179,7 @@ export class ProductRepository {
         // 1. Vendors whose store is registered in this pincode
         const vendors = await VendorProfileModel.find({
             "storeLocationAddress.postalCode": pincode,
-        }).select("user");
+        }).select("user").lean();
 
         const vendorIds = vendors.map((v) => v.user);
 
@@ -217,7 +222,8 @@ export class ProductRepository {
                 .populate("unit")
                 .sort({ createdAt: -1 })
                 .skip(skip)
-                .limit(limit),
+                .limit(limit)
+                .lean(),
 
             ProductModel.countDocuments(filter),
         ]);
@@ -325,9 +331,9 @@ export class ProductRepository {
         const page = Math.max(Number(options.page) || 1, 1);
         const limit =
             options.limit !== undefined && Number(options.limit) > 0
-                ? Number(options.limit)
-                : undefined;
-        const skip = limit ? (page - 1) * limit : 0;
+                ? Math.min(Number(options.limit), 50)
+                : 50;
+        const skip = (page - 1) * limit;
 
         const filter: any = {
             isActive: true,
@@ -341,7 +347,7 @@ export class ProductRepository {
 
             const vendorIds = vendors.map((v) => v.user);
             if (vendorIds.length === 0) {
-                return { items: [], total: 0, page, limit: limit ?? 0 };
+                return { items: [], total: 0, page, limit };
             }
             filter.vendorId = { $in: vendorIds };
         } else if (options.vendorId) {
@@ -377,7 +383,7 @@ export class ProductRepository {
             ProductModel.countDocuments(filter),
         ]);
 
-        return { items, total, page, limit: limit ?? total };
+        return { items, total, page, limit };
     }
 
     async findMostBought(options: {
@@ -391,9 +397,9 @@ export class ProductRepository {
         const page = Math.max(Number(options.page) || 1, 1);
         const limit =
             options.limit !== undefined && Number(options.limit) > 0
-                ? Number(options.limit)
-                : undefined;
-        const skip = limit ? (page - 1) * limit : 0;
+                ? Math.min(Number(options.limit), 50)
+                : 50;
+        const skip = (page - 1) * limit;
 
         const filter: any = {
             isActive: true,
@@ -407,7 +413,7 @@ export class ProductRepository {
 
             const vendorIds = vendors.map((v) => v.user);
             if (vendorIds.length === 0) {
-                return { items: [], total: 0, page, limit: limit ?? 0 };
+                return { items: [], total: 0, page, limit };
             }
             filter.vendorId = { $in: vendorIds };
         } else if (options.vendorId) {
@@ -443,6 +449,6 @@ export class ProductRepository {
             ProductModel.countDocuments(filter),
         ]);
 
-        return { items, total, page, limit: limit ?? total };
+        return { items, total, page, limit };
     }
 }

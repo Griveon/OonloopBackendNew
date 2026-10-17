@@ -51,7 +51,10 @@ export class CartService {
         if (!mongoose.isValidObjectId(productId)) throw new Error("Invalid product ID");
         if (variantId && !mongoose.isValidObjectId(variantId)) throw new Error("Invalid variant ID");
 
-        const product: any = await ProductModel.findById(productId);
+        const query: any = ProductModel.findById(productId);
+        const product: any = typeof query?.select === "function"
+            ? await query.select("name price customerSellingPrice mrp stock isActive availability gst variants images")
+            : await query;
         if (!product) throw new Error("Product not found");
         if (!this.isProductAvailable(product)) throw new Error("Product is not currently available");
 
@@ -129,7 +132,11 @@ export class CartService {
 
     async getCart(userId: string) {
         const cart = await this.repo.findOrCreate(userId);
-        await cart.populate({ path: "items.product", model: "Product" });
+        await cart.populate({
+            path: "items.product",
+            model: "Product",
+            select: "name vendorId images category productCategory price customerSellingPrice mrp stock isActive availability",
+        });
 
         const vendorUserIds = [
             ...new Set(
@@ -139,7 +146,9 @@ export class CartService {
             ),
         ];
 
-        const vendors = await VendorProfileModel.find({ user: { $in: vendorUserIds } }).lean();
+        const vendors = await VendorProfileModel.find({ user: { $in: vendorUserIds } })
+            .select("user storeName storeLogo isVerified profileStatus storeLocationAddress")
+            .lean();
         const vendorMap = new Map(
             vendors.map((vendor) => [
                 vendor.user.toString(),

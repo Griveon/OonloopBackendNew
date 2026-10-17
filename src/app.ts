@@ -4,12 +4,14 @@ import helmet from "helmet";
 import compression from "compression";
 
 import path from "path";
+import { performanceMonitor } from "./middlewares/performance.middleware.js";
 
 import appRoutes from "./routes/app.routes.js";
 import appVersionRoutes from "./modules/appversions/routes/appversion.routes.js";
 // import { migrate } from "./productrunscript.js";
 
 const app = express();
+app.use(performanceMonitor);
 
 /**
  * Static mock assets (dev/demo) — served before helmet so cross-origin image

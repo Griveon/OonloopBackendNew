@@ -304,7 +304,6 @@ const orderSchema = new Schema<IOrderDocument>(
         orderNumber: {
             type: String,
             required: true,
-            unique: true,
             trim: true,
         },
 
@@ -502,10 +501,12 @@ orderSchema.pre("validate", function () {
 });
 
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ user: 1, isActive: 1, createdAt: -1 });
 orderSchema.index({ "items.vendorType": 1, createdAt: -1 });
 orderSchema.index({ "items.customVendor.externalVendorId": 1 });
 orderSchema.index({ vendor: 1, createdAt: -1 });
 orderSchema.index({ vendors: 1, createdAt: -1 });
+orderSchema.index({ vendors: 1, isActive: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1, createdAt: -1 });
 orderSchema.index({ orderType: 1, createdAt: -1 });

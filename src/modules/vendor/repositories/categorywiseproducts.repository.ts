@@ -7,6 +7,7 @@ import {
     normalizeSearch,
     getSearchTerms,
 } from "../../product/utils/productsearch.util.js";
+import { VendorCategoryModel } from "../../vendorcategory/models/vendorcategory.model.js";
 import { isProductAvailableNow } from "../utils/timetominutes.util.js";
 
 export class CategoryProductsRepository {
@@ -15,7 +16,19 @@ export class CategoryProductsRepository {
             isActive: true,
         };
 
-        if (categoryId && categoryId !== "all") {
+        if (
+            categoryId &&
+            (categoryId === "restaurant" || categoryId === "restaurants")
+        ) {
+            const restCat = await VendorCategoryModel.findOne({
+                name: { $regex: /restaurant/i },
+                isActive: true,
+            }).select("_id").lean();
+
+            if (restCat) {
+                match.vendorCategory = restCat._id;
+            }
+        } else if (categoryId && categoryId !== "all" && mongoose.Types.ObjectId.isValid(categoryId)) {
             match.vendorCategory = new mongoose.Types.ObjectId(categoryId);
         }
 
@@ -395,11 +408,13 @@ export class CategoryProductsRepository {
     }
 
     async findRestaurantsByCategory(
-        categoryId: string,
-        lat: number,
-        lng: number,
-        maxDistance: number,
-        search: string = ""
+        categoryId?: string,
+        lat?: number,
+        lng?: number,
+        maxDistance: number = 10000,
+        search: string = "",
+        page: number = 1,
+        limit: number = 12
     ) {
         /*
          * ---------------------------------------------------------
@@ -407,16 +422,19 @@ export class CategoryProductsRepository {
          * ---------------------------------------------------------
          */
 
-        const nearbyVendors = await VendorProfileModel.find({
-            "storeLocationAddress.location": {
+        const geoFilter: any = {};
+        if (lat !== undefined && lng !== undefined && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
+            geoFilter["storeLocationAddress.location"] = {
                 $geoWithin: {
                     $centerSphere: [
-                        [lng, lat],
-                        maxDistance / 6378100,
+                        [Number(lng), Number(lat)],
+                        (Number(maxDistance) || 10000) / 6378100,
                     ],
                 },
-            },
-        })
+            };
+        }
+
+        const nearbyVendors = await VendorProfileModel.find(geoFilter)
             .select("user storeName profileImage")
             .lean();
 
@@ -425,7 +443,52 @@ export class CategoryProductsRepository {
             .filter(Boolean);
 
         if (!vendorIds.length) {
-            return [];
+            return {
+                restaurants: [],
+                total: 0,
+                page: Math.max(Number(page) || 1, 1),
+                limit: Math.min(Math.max(Number(limit) || 12, 1), 100),
+                totalPages: 0,
+                categories: [],
+            };
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * DISCOVER RESTAURANT CATEGORIES
+         * ---------------------------------------------------------
+         */
+
+        const restCat = await VendorCategoryModel.findOne({
+            name: { $regex: /restaurant/i },
+            isActive: true,
+        }).select("_id").lean();
+
+        let allCategoryNames: string[] = [];
+        let allCategoryObjects: any[] = [];
+
+        if (restCat) {
+            const allProdCats = await ProductCategoryModel.find({
+                vendorCategory: restCat._id,
+                isActive: true,
+            })
+                .select("_id l2Category icon")
+                .lean();
+
+            const categoryMap = new Map<string, any>();
+            for (const pc of allProdCats) {
+                const name = pc.l2Category?.name;
+                if (name && !categoryMap.has(name)) {
+                    categoryMap.set(name, {
+                        _id: pc._id,
+                        name: name,
+                        code: pc.l2Category?.code,
+                        icon: pc.icon || "",
+                    });
+                }
+            }
+            allCategoryNames = Array.from(categoryMap.keys());
+            allCategoryObjects = Array.from(categoryMap.values());
         }
 
         /*
@@ -438,13 +501,55 @@ export class CategoryProductsRepository {
             vendorId: {
                 $in: vendorIds,
             },
-
-            category: new mongoose.Types.ObjectId(categoryId),
-
             isActive: true,
-
             isMainCatalogProduct: true,
         };
+
+        const isAllCategory =
+            !categoryId ||
+            categoryId === "all" ||
+            categoryId === "restaurant" ||
+            categoryId === "restaurants" ||
+            (restCat && String(categoryId) === String(restCat._id));
+
+        if (!isAllCategory) {
+            if (mongoose.Types.ObjectId.isValid(categoryId)) {
+                const objId = new mongoose.Types.ObjectId(categoryId);
+                const pcDoc = await ProductCategoryModel.findById(objId)
+                    .select("l2Category")
+                    .lean();
+
+                if (pcDoc?.l2Category?.name) {
+                    const sameL2Cats = await ProductCategoryModel.find({
+                        ...(restCat ? { vendorCategory: restCat._id } : {}),
+                        "l2Category.name": pcDoc.l2Category.name,
+                        isActive: true,
+                    }).select("_id").lean();
+
+                    match.productCategory = { $in: sameL2Cats.map((c) => c._id) };
+                } else {
+                    match.$or = [{ category: objId }, { productCategory: objId }];
+                }
+            } else {
+                const matchingProdCats = await ProductCategoryModel.find({
+                    ...(restCat ? { vendorCategory: restCat._id } : {}),
+                    $or: [
+                        { "l2Category.name": { $regex: new RegExp(`^${escapeRegex(categoryId)}$`, "i") } },
+                        { "l3Category.name": { $regex: new RegExp(`^${escapeRegex(categoryId)}$`, "i") } },
+                        { name: { $regex: new RegExp(`^${escapeRegex(categoryId)}$`, "i") } },
+                    ],
+                    isActive: true,
+                }).select("_id").lean();
+
+                if (matchingProdCats.length > 0) {
+                    match.productCategory = { $in: matchingProdCats.map((c) => c._id) };
+                } else {
+                    match.name = { $regex: categoryId, $options: "i" };
+                }
+            }
+        } else if (restCat) {
+            match.category = restCat._id;
+        }
 
         /*
          * ---------------------------------------------------------
@@ -481,7 +586,12 @@ export class CategoryProductsRepository {
                     products: {
                         $push: {
                             availability: "$availability",
+                            productCategory: "$productCategory",
                         },
+                    },
+
+                    productCategoryIds: {
+                        $addToSet: "$productCategory",
                     },
                 },
             },
@@ -497,6 +607,15 @@ export class CategoryProductsRepository {
 
             {
                 $unwind: "$vendor",
+            },
+
+            {
+                $lookup: {
+                    from: "productcategories",
+                    localField: "productCategoryIds",
+                    foreignField: "_id",
+                    as: "categoryDocs",
+                },
             },
 
             {
@@ -516,6 +635,8 @@ export class CategoryProductsRepository {
                     totalProducts: 1,
 
                     products: 1,
+
+                    categoryDocs: 1,
 
                     workingHours: "$vendor.workingHours",
 
@@ -551,10 +672,7 @@ export class CategoryProductsRepository {
 
         /*
          * ---------------------------------------------------------
-         * CALCULATE RESTAURANT AVAILABILITY
-         *
-         * Restaurant is available when ANY product is currently
-         * available.
+         * CALCULATE RESTAURANT AVAILABILITY & PRODUCT CATEGORIES
          * ---------------------------------------------------------
          */
 
@@ -569,20 +687,64 @@ export class CategoryProductsRepository {
                             )
                     );
 
+                const categories = Array.from(
+                    new Set(
+                        (restaurant.categoryDocs || [])
+                            .map((cd: any) => cd.l2Category?.name || cd.l3Category?.name || cd.name)
+                            .filter(Boolean)
+                    )
+                );
+
+                const categoryList = (restaurant.categoryDocs || []).map((cd: any) => ({
+                    _id: cd._id,
+                    name: cd.name,
+                    l1Category: cd.l1Category,
+                    l2Category: cd.l2Category,
+                    l3Category: cd.l3Category,
+                }));
+
                 const {
                     products,
+                    categoryDocs,
                     ...restaurantData
                 } = restaurant;
 
                 return {
                     ...restaurantData,
-
+                    categories,
+                    cuisines: categories,
+                    cuisine: categories.join(", "),
+                    categoryList,
                     isAvailableNow: Boolean(
                         isAvailableNow
                     ),
                 };
             });
 
-        return restaurantsWithAvailability;
+        const total = restaurantsWithAvailability.length;
+        const safePage = Math.max(Number(page) || 1, 1);
+        const safeLimit = Math.min(Math.max(Number(limit) || 12, 1), 100);
+        const startIndex = (safePage - 1) * safeLimit;
+        const paginatedRestaurants = restaurantsWithAvailability.slice(
+            startIndex,
+            startIndex + safeLimit
+        );
+
+        const combinedCategoryNames = Array.from(
+            new Set([
+                ...allCategoryNames,
+                ...restaurantsWithAvailability.flatMap((r: any) => r.categories || []),
+            ])
+        );
+
+        return {
+            restaurants: paginatedRestaurants,
+            total,
+            page: safePage,
+            limit: safeLimit,
+            totalPages: Math.ceil(total / safeLimit) || (total > 0 ? 1 : 0),
+            categories: combinedCategoryNames,
+            categoryList: allCategoryObjects,
+        };
     }
 }

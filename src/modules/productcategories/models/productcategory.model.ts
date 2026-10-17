@@ -35,6 +35,8 @@ const ProductCategorySchema: Schema<IProductCategoryDocument> =
         { timestamps: true }
     );
 
+ProductCategorySchema.index({ vendorCategory: 1, isActive: 1 });
+
 
 export const ProductCategoryModel: Model<IProductCategoryDocument> =
     mongoose.model<IProductCategoryDocument>(

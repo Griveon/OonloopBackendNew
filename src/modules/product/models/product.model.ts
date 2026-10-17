@@ -176,7 +176,6 @@ const productSchema = new Schema<IProduct>(
         searchKeywords: {
             type: [String],
             default: [],
-            index: true,
         },
         availability: {
             type: availabilitySchema,
@@ -252,5 +251,32 @@ productSchema.index({
     isActive: 1,
     soldCount: -1,
     _id: 1,
+});
+
+productSchema.index({
+    vendorId: 1,
+    isActive: 1,
+});
+
+productSchema.index({
+    isActive: 1,
+    createdAt: -1,
+});
+
+productSchema.index({
+    vendorId: 1,
+    createdAt: -1,
+});
+
+productSchema.index({
+    category: 1,
+    isActive: 1,
+    createdAt: -1,
+});
+
+productSchema.index({
+    productCategory: 1,
+    isActive: 1,
+    createdAt: -1,
 });
 export const ProductModel: Model<IProduct> = mongoose.model<IProduct>("Product", productSchema);
