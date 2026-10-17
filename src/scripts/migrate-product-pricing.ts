@@ -1,12 +1,16 @@
 import mongoose from "mongoose";
 import { connectDatabase } from "../config/database.js";
 import { ProductModel } from "../modules/product/models/product.model.js";
-import { calculateProductHandling } from "../modules/product/utils/pricing.util.js";
+import {
+    calculateProductHandling,
+    resolveCategoryHandlingConfig,
+} from "../modules/product/utils/pricing.util.js";
 import { VendorCategoryModel } from "../modules/vendorcategory/models/vendorcategory.model.js";
 
 interface MigrationOptions {
     dryRun: boolean;
     recalculateAll: boolean;
+    categoryFilter?: string | undefined;
     batchSize: number;
 }
 
@@ -14,14 +18,21 @@ const parseArgs = (): MigrationOptions => {
     const args = process.argv.slice(2);
     const dryRun = args.includes("--dry-run");
     const recalculateAll = args.includes("--all") || args.includes("--force");
+    const categoryArg = args.find((a) => a.startsWith("--category="));
+    const groceryOnly = args.includes("--grocery");
+    const categoryFilter = categoryArg
+        ? categoryArg.split("=")[1]
+        : groceryOnly
+            ? "grocery"
+            : undefined;
     const batchSizeArg = args.find((a) => a.startsWith("--batch-size="));
     const batchSize = batchSizeArg ? Math.max(parseInt(batchSizeArg.split("=")[1] || "500", 10), 1) : 500;
 
-    return { dryRun, recalculateAll, batchSize };
+    return { dryRun, recalculateAll, categoryFilter, batchSize };
 };
 
 const runProductPricingMigration = async (): Promise<void> => {
-    const { dryRun, recalculateAll, batchSize } = parseArgs();
+    const { dryRun, recalculateAll, categoryFilter, batchSize } = parseArgs();
 
     console.log("============================================================");
     console.log("📦 PRODUCT PRICING MIGRATION (customerSellingPrice & productHandling)");
@@ -30,13 +41,21 @@ const runProductPricingMigration = async (): Promise<void> => {
     console.log("⚠️  Use --dry-run before real migration.");
     console.log("------------------------------------------------------------");
     console.log(`Mode:            ${dryRun ? "🔍 DRY-RUN (no database changes)" : "🚀 LIVE MIGRATION"}`);
-    console.log(`Scope:           ${recalculateAll ? "ALL products (--all)" : "Products missing/invalid customerSellingPrice or productHandling"}`);
+    console.log(
+        `Scope:           ${
+            categoryFilter
+                ? `Category \"${categoryFilter}\" products`
+                : recalculateAll
+                    ? "ALL products (--all)"
+                    : "Products missing/invalid customerSellingPrice or productHandling"
+        }`
+    );
     console.log(`Batch Size:      ${batchSize}`);
     console.log("------------------------------------------------------------\n");
 
     await connectDatabase();
 
-    const baseFilter: any = recalculateAll
+    const baseFilter: any = recalculateAll || categoryFilter
         ? {}
         : {
             $or: [
@@ -60,6 +79,23 @@ const runProductPricingMigration = async (): Promise<void> => {
                 { "variants.additionalHandling.amount": { $exists: false } },
             ],
         };
+
+    if (categoryFilter) {
+        let catQuery: any = {};
+        if (mongoose.isValidObjectId(categoryFilter)) {
+            catQuery = { _id: categoryFilter };
+        } else {
+            catQuery = { name: new RegExp(`^${categoryFilter.trim()}$`, "i") };
+        }
+        const matchedCats = await VendorCategoryModel.find(catQuery).select("_id name").lean();
+        const targetCategoryIds = matchedCats.map((c: any) => c._id);
+        console.log(
+            `Target category IDs: ${
+                matchedCats.map((c: any) => `${c.name} (${c._id})`).join(", ") || "NONE FOUND"
+            }\n`
+        );
+        baseFilter.category = { $in: targetCategoryIds };
+    }
 
     const totalMatching = await ProductModel.countDocuments(baseFilter);
     console.log(`Total matching products found: ${totalMatching}\n`);
@@ -106,13 +142,13 @@ const runProductPricingMigration = async (): Promise<void> => {
         const categories = await VendorCategoryModel.find({
             _id: { $in: categoryIds },
         })
-            .select("_id additionalHandling")
+            .select("_id name additionalHandling")
             .lean();
 
         const categoryHandlingMap = new Map(
             categories.map((category: any) => [
                 category._id.toString(),
-                category.additionalHandling,
+                resolveCategoryHandlingConfig(category),
             ])
         );
 

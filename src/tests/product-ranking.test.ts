@@ -11,6 +11,11 @@ import {
     revertOrderSales,
     backfillHistoricalSales,
 } from "../modules/order/services/ordersales.service.js";
+import {
+    calculateProductHandling,
+    resolveCategoryHandlingConfig,
+    isExemptCategoryName,
+} from "../modules/product/utils/pricing.util.js";
 
 test("new products default viewCount and soldCount to zero", () => {
     const product = new ProductModel({
@@ -365,4 +370,73 @@ test("backfillHistoricalSales accurately calculates product totals in dry-run mo
     } finally {
         (OrderModel as any).find = originalFind;
     }
+});
+
+test("isExemptCategoryName accurately identifies grocery categories case-insensitively", () => {
+    assert.equal(isExemptCategoryName("Grocery"), true);
+    assert.equal(isExemptCategoryName("grocery"), true);
+    assert.equal(isExemptCategoryName(" GROCERY "), true);
+    assert.equal(isExemptCategoryName("Groceries"), true);
+    assert.equal(isExemptCategoryName("Dairy & Bakery"), false);
+    assert.equal(isExemptCategoryName("Meat & Fish"), false);
+    assert.equal(isExemptCategoryName(null), false);
+    assert.equal(isExemptCategoryName(undefined), false);
+});
+
+test("resolveCategoryHandlingConfig marks grocery categories as handling exempt", () => {
+    const groceryCat = {
+        name: "Grocery",
+        additionalHandling: { enabled: true, percentage: 0.75, maxAmount: 10 },
+    };
+    const resolvedGrocery = resolveCategoryHandlingConfig(groceryCat);
+    assert.deepEqual(resolvedGrocery, {
+        isHandlingExempt: true,
+        enabled: false,
+        percentage: 0,
+        maxAmount: 0,
+    });
+
+    const otherCat = {
+        name: "Dairy & Bakery",
+        additionalHandling: { enabled: true, percentage: 0.75, maxAmount: 10 },
+    };
+    const resolvedOther = resolveCategoryHandlingConfig(otherCat);
+    assert.deepEqual(resolvedOther, otherCat.additionalHandling);
+});
+
+test("calculateProductHandling yields 0% handling for exempt grocery category", () => {
+    const exemptConfig = {
+        isHandlingExempt: true,
+        enabled: false,
+        percentage: 0,
+        maxAmount: 0,
+    };
+
+    const calc = calculateProductHandling(100, 150, exemptConfig);
+
+    assert.equal(calc.productHandling, 0);
+    assert.equal(calc.productHandlingCharges, 0);
+    assert.equal(calc.customerSellingPrice, 100);
+    assert.equal(calc.finalSellingPrice, 100);
+    assert.equal(calc.chargeAddedToPrice, 0);
+    assert.equal(calc.sellerAdjustment, 0);
+    assert.equal(calc.baseHandlingPercentage, 0);
+    assert.equal(calc.baseHandlingAmount, 0);
+    assert.equal(calc.categoryHandlingPercentage, 0);
+    assert.equal(calc.categoryHandlingAmount, 0);
+    assert.equal(calc.totalHandlingAmount, 0);
+    assert.equal(calc.additionalHandling.amount, 0);
+    assert.equal(calc.additionalHandling.enabled, false);
+    assert.equal(calc.breakdown.totalPercent, 0);
+    assert.equal(calc.breakdown.handlingPercent, 0);
+});
+
+test("calculateProductHandling continues standard 2.6% charge for regular non-exempt category", () => {
+    const calc = calculateProductHandling(100, 150, null);
+
+    assert.equal(calc.baseHandlingPercentage, 2.6);
+    assert.equal(calc.baseHandlingAmount, 2.6);
+    assert.equal(calc.productHandling, 2.6);
+    assert.equal(calc.customerSellingPrice, 102.6);
+    assert.equal(calc.breakdown.totalPercent, 2.6);
 });

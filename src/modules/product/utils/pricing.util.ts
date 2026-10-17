@@ -4,6 +4,31 @@ export interface IAdditionalHandlingConfig {
     enabled?: boolean;
     percentage?: number;
     maxAmount?: number;
+    isHandlingExempt?: boolean;
+}
+
+export const EXEMPT_CATEGORY_NAMES: readonly string[] = Object.freeze(["grocery", "groceries"]);
+
+export function isExemptCategoryName(name?: string | null): boolean {
+    if (!name) return false;
+    const normalized = name.trim().toLowerCase();
+    return EXEMPT_CATEGORY_NAMES.includes(normalized);
+}
+
+export function resolveCategoryHandlingConfig(category?: {
+    name?: string;
+    additionalHandling?: IAdditionalHandlingConfig | null;
+} | null): IAdditionalHandlingConfig | null {
+    if (!category) return null;
+    if (isExemptCategoryName(category.name)) {
+        return {
+            isHandlingExempt: true,
+            enabled: false,
+            percentage: 0,
+            maxAmount: 0,
+        };
+    }
+    return category.additionalHandling ?? null;
 }
 
 export interface IAdditionalHandlingSnapshot {
@@ -70,10 +95,13 @@ export function calculateProductHandling(
         throw new Error("Selling price cannot exceed MRP");
     }
 
-    const applicablePercent = PRODUCT_PRICING_CONFIG.TOTAL_PERCENT;
-    const desiredBaseHandlingAmount = roundToTwoDecimals(sellingPrice * (applicablePercent / 100));
+    const isExempt = additionalHandling?.isHandlingExempt === true;
+    const applicablePercent = isExempt ? 0 : PRODUCT_PRICING_CONFIG.TOTAL_PERCENT;
+    const desiredBaseHandlingAmount = isExempt
+        ? 0
+        : roundToTwoDecimals(sellingPrice * (applicablePercent / 100));
 
-    const categoryHandlingEnabled = additionalHandling?.enabled === true;
+    const categoryHandlingEnabled = !isExempt && additionalHandling?.enabled === true;
     const categoryHandlingPercentage = categoryHandlingEnabled
         ? Math.max(Number(additionalHandling?.percentage ?? 0), 0)
         : 0;
@@ -134,10 +162,10 @@ export function calculateProductHandling(
         additionalHandling: additionalHandlingSnapshot,
         breakdown: {
             totalPercent: applicablePercent,
-            razorpayPercent: PRODUCT_PRICING_CONFIG.RAZORPAY_PERCENT,
-            tdsPercent: PRODUCT_PRICING_CONFIG.TDS_PERCENT,
-            otherChargesPercent: PRODUCT_PRICING_CONFIG.OTHER_CHARGES_PERCENT,
-            handlingPercent: PRODUCT_PRICING_CONFIG.HANDLING_PERCENT,
+            razorpayPercent: isExempt ? 0 : PRODUCT_PRICING_CONFIG.RAZORPAY_PERCENT,
+            tdsPercent: isExempt ? 0 : PRODUCT_PRICING_CONFIG.TDS_PERCENT,
+            otherChargesPercent: isExempt ? 0 : PRODUCT_PRICING_CONFIG.OTHER_CHARGES_PERCENT,
+            handlingPercent: isExempt ? 0 : PRODUCT_PRICING_CONFIG.HANDLING_PERCENT,
             categoryHandlingPercent: categoryHandlingPercentage,
             categoryHandlingMaxAmount,
         },

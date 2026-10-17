@@ -7,6 +7,7 @@ import { CartModel } from "../../cart/models/cart.model.js";
 import {
     calculateProductHandling,
     getDefaultAdditionalHandlingSnapshot,
+    resolveCategoryHandlingConfig,
     type IAdditionalHandlingConfig,
 } from "../utils/pricing.util.js";
 import { isProductAvailableNow } from "../../vendor/utils/timetominutes.util.js";
@@ -35,11 +36,20 @@ export class ProductService {
             return null;
         }
 
-        const category = await VendorCategoryModel.findById(categoryId)
-            .select("additionalHandling")
-            .lean();
+        let category: any = null;
+        if (mongoose.isValidObjectId(categoryId)) {
+            category = await VendorCategoryModel.findById(categoryId)
+                .select("name additionalHandling")
+                .lean();
+        } else if (typeof categoryId === "string" && categoryId.trim()) {
+            category = await VendorCategoryModel.findOne({
+                name: new RegExp(`^${categoryId.trim()}$`, "i"),
+            })
+                .select("name additionalHandling")
+                .lean();
+        }
 
-        return category?.additionalHandling ?? null;
+        return resolveCategoryHandlingConfig(category);
     }
 
 
