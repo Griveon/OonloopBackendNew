@@ -1,9 +1,12 @@
 import { BuyForMeRepository } from "../repositories/buyforme.repository.js";
 import { ProductModel } from "../../product/models/product.model.js";
+import { UserModel } from "../../user/models/user.model.js";
 import { BFM_PRICING, BFM_SOURCE_MODES } from "../constants/buyforme.constants.js";
 import { emitRideRequest, emitRideTaken } from "../../../config/socket.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const generateOtp = () =>
+    Math.floor(100000 + Math.random() * 900000).toString();
 
 export class BuyForMeService {
     private repo = new BuyForMeRepository();
@@ -135,9 +138,14 @@ export class BuyForMeService {
         return this.getRequest(requestId, userId);
     }
 
-    /** Full request with items grouped by source + totals. */
+    /** Full request with items grouped by source + totals. Owner or assigned shopper. */
     async getRequest(requestId: string, userId: string) {
-        const req = await this.loadOwned(requestId, userId);
+        const req: any = await this.repo.findById(requestId);
+        if (!req) throw new Error("Request not found");
+        const owns = req.user?._id?.toString() === userId;
+        const isShopper = req.shopper?._id?.toString() === userId;
+        if (!owns && !isShopper) throw new Error("Request not found");
+
         const items = await this.repo.findItemsByRequest(requestId);
 
         const group = (s: string) => items.filter((i: any) => i.source === s);
@@ -215,6 +223,10 @@ export class BuyForMeService {
     }
 
     async acceptRequest(requestId: string, userId: string) {
+        // Only a driver/rider can accept a shopper job.
+        if (!(await this.isDriver(userId))) {
+            throw new Error("Only a driver can accept a shopper request");
+        }
         if (await this.repo.isShopperBusy(userId)) {
             throw new Error("You already have an active job");
         }
@@ -224,9 +236,33 @@ export class BuyForMeService {
         return this.shopperSummary(req);
     }
 
+    private async isDriver(userId: string): Promise<boolean> {
+        const u: any = await UserModel.findById(userId).select("role roles");
+        if (!u) return false;
+        if (u.role === "driver") return true;
+        return Array.isArray(u.roles) && u.roles.includes("driver");
+    }
+
     async getShopperRequests(userId: string) {
         const list = await this.repo.findByShopper(userId);
         return list.map((r: any) => this.shopperSummary(r));
+    }
+
+    /** Shopper's completed (delivered) jobs, paginated. */
+    async getShopperHistory(userId: string, page = 1, limit = 10) {
+        const r = await this.repo.findShopperHistory(userId, page, limit);
+        return {
+            items: r.items.map((x: any) => ({
+                ...this.shopperSummary(x),
+                actualBillAmount: x.actualBillAmount,
+                refundAmount: x.refundAmount,
+                deliveredAt: x.deliveredAt,
+            })),
+            total: r.total,
+            page: r.page,
+            limit: r.limit,
+            totalPages: r.totalPages,
+        };
     }
 
     /** Shopper marks an item available / unavailable / purchased. */
@@ -259,6 +295,112 @@ export class BuyForMeService {
             paymentStatus: refundAmount > 0 ? "partially_refunded" : "paid",
         });
         return { actualBillAmount, budget: req.budget, refundAmount };
+    }
+
+    // ---------- shopper: fulfilment / delivery ----------
+
+    /**
+     * Shopper advances the job: shopper_assigned → shopping → ready → out_for_delivery.
+     * (delivered is reached only through verifyDelivery with the customer OTP.)
+     */
+    async advanceStatus(requestId: string, userId: string, nextStatus: string) {
+        const req: any = await this.repo.findById(requestId);
+        if (!req) throw new Error("Request not found");
+        if (req.shopper?._id?.toString() !== userId) {
+            throw new Error("Not the assigned shopper");
+        }
+
+        const transitions: Record<string, string[]> = {
+            shopper_assigned: ["shopping"],
+            shopping: ["ready"],
+            ready: ["out_for_delivery"],
+        };
+        const allowed = transitions[req.status] || [];
+        if (!allowed.includes(nextStatus)) {
+            throw new Error(
+                `Cannot move a "${req.status}" request to "${nextStatus}"`
+            );
+        }
+
+        const patch: any = { status: nextStatus };
+        if (nextStatus === "shopping") patch.shoppingStartedAt = new Date();
+        if (nextStatus === "ready") patch.readyAt = new Date();
+        if (nextStatus === "out_for_delivery") patch.outForDeliveryAt = new Date();
+
+        const updated = await this.repo.updateById(requestId, patch);
+        return { requestId, status: updated?.status };
+    }
+
+    /**
+     * Customer fetches the delivery OTP to give the shopper on arrival.
+     * Available only once the shopper is out for delivery.
+     */
+    async getDeliveryOtp(requestId: string, userId: string) {
+        const req: any = await this.repo.findByIdWithDeliveryOtp(requestId);
+        if (!req) throw new Error("Request not found");
+        if (req.user?._id?.toString() !== userId) throw new Error("Request not found");
+
+        if (!["out_for_delivery", "delivered"].includes(req.status)) {
+            throw new Error(
+                "Delivery OTP is available once the shopper is out for delivery"
+            );
+        }
+
+        let deliveryOtp = req.customerVerification?.deliveryOtp;
+        if (!deliveryOtp) {
+            deliveryOtp = generateOtp();
+            await this.repo.updateById(requestId, {
+                customerVerification: {
+                    ...(req.customerVerification || {}),
+                    deliveryOtp,
+                    otpVerified: false,
+                },
+            } as any);
+        }
+        return { requestId: req._id, status: req.status, deliveryOtp };
+    }
+
+    /**
+     * Shopper confirms delivery with the customer's OTP (or a signature) → delivered.
+     */
+    async verifyDelivery(
+        requestId: string,
+        userId: string,
+        data: { deliveryOtp?: string; signatureUrl?: string }
+    ) {
+        const req: any = await this.repo.findByIdWithDeliveryOtp(requestId);
+        if (!req) throw new Error("Request not found");
+        if (req.shopper?._id?.toString() !== userId) {
+            throw new Error("Not the assigned shopper");
+        }
+        if (req.status !== "out_for_delivery") {
+            throw new Error(
+                `Delivery can only be confirmed when out for delivery (current: ${req.status})`
+            );
+        }
+
+        const otpValid =
+            !!data.deliveryOtp &&
+            !!req.customerVerification?.deliveryOtp &&
+            data.deliveryOtp === req.customerVerification.deliveryOtp;
+        const signatureValid = !!data.signatureUrl;
+
+        if (!otpValid && !signatureValid) {
+            throw new Error("Invalid delivery OTP or signature is required");
+        }
+
+        const updated = await this.repo.updateById(requestId, {
+            status: "delivered",
+            deliveredAt: new Date(),
+            customerVerification: {
+                ...(req.customerVerification || {}),
+                otpVerified: otpValid,
+                signatureUrl: data.signatureUrl || req.customerVerification?.signatureUrl || "",
+                verifiedAt: new Date(),
+            },
+        } as any);
+
+        return { requestId, status: updated?.status, deliveredAt: updated?.deliveredAt };
     }
 
     /** Simple status/track for the customer. */

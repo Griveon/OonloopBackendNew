@@ -155,6 +155,20 @@ export class BuyForMeController {
         }
     };
 
+    // GET /buyforme/rider/history  (shopper) — completed jobs
+    getShopperHistory = async (req: Request, res: Response) => {
+        try {
+            const page = Number(req.query.page) || 1;
+            const limit = Number(req.query.limit) || 10;
+            const r = await this.service.getShopperHistory(this.uid(req), page, limit);
+            return res.status(200).json(
+                ResponseUtil.paginated("Shopper history", r.items, r.page, r.limit, r.total)
+            );
+        } catch (e: any) {
+            return res.status(500).json(ResponseUtil.serverError(e.message));
+        }
+    };
+
     updateItemStatus = async (req: Request, res: Response) => {
         try {
             const r = await this.service.updateItemStatus(req.params.itemId as string, this.uid(req), req.body);
@@ -168,6 +182,36 @@ export class BuyForMeController {
         try {
             const r = await this.service.setBill(req.params.id as string, this.uid(req), Number(req.body.actualBillAmount));
             return res.status(200).json(ResponseUtil.success("Bill recorded", r));
+        } catch (e: any) {
+            return res.status(400).json(ResponseUtil.badRequest(e.message));
+        }
+    };
+
+    // PUT /buyforme/:id/status  (shopper) — shopping / ready / out_for_delivery
+    advanceStatus = async (req: Request, res: Response) => {
+        try {
+            const r = await this.service.advanceStatus(req.params.id as string, this.uid(req), String(req.body.status));
+            return res.status(200).json(ResponseUtil.success("Status updated", r));
+        } catch (e: any) {
+            return res.status(400).json(ResponseUtil.badRequest(e.message));
+        }
+    };
+
+    // GET /buyforme/:id/delivery-otp  (customer)
+    getDeliveryOtp = async (req: Request, res: Response) => {
+        try {
+            const r = await this.service.getDeliveryOtp(req.params.id as string, this.uid(req));
+            return res.status(200).json(ResponseUtil.success("Delivery OTP", r));
+        } catch (e: any) {
+            return res.status(400).json(ResponseUtil.badRequest(e.message));
+        }
+    };
+
+    // POST /buyforme/:id/verify-delivery  (shopper)
+    verifyDelivery = async (req: Request, res: Response) => {
+        try {
+            const r = await this.service.verifyDelivery(req.params.id as string, this.uid(req), req.body);
+            return res.status(200).json(ResponseUtil.success("Delivery confirmed", r));
         } catch (e: any) {
             return res.status(400).json(ResponseUtil.badRequest(e.message));
         }
