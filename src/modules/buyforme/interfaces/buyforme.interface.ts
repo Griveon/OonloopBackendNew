@@ -62,6 +62,18 @@ export interface IBuyForMeRequest {
 
     shopper?: Types.ObjectId;
 
+    // delivery handoff
+    customerVerification?: {
+        deliveryOtp?: string;
+        otpVerified?: boolean;
+        signatureUrl?: string;
+        verifiedAt?: Date;
+    };
+    shoppingStartedAt?: Date;
+    readyAt?: Date;
+    outForDeliveryAt?: Date;
+    deliveredAt?: Date;
+
     isActive: boolean;
     createdAt?: Date;
     updatedAt?: Date;

@@ -28,6 +28,14 @@ export class BuyForMeRepository {
         return BuyForMeRequestModel.findByIdAndUpdate(id, data, { new: true });
     }
 
+    // Includes the hidden delivery OTP (for generate/verify).
+    async findByIdWithDeliveryOtp(id: string) {
+        return BuyForMeRequestModel.findById(id)
+            .select("+customerVerification.deliveryOtp")
+            .populate("user", "firstName lastName mobileNumber")
+            .populate("shopper", "firstName lastName mobileNumber");
+    }
+
     async findByUser(userId: string, page = 1, limit = 10) {
         const skip = (page - 1) * limit;
         const q: any = { user: userId, isActive: true, status: { $ne: "draft" } };
@@ -116,5 +124,24 @@ export class BuyForMeRepository {
         })
             .sort({ createdAt: -1 })
             .populate("user", "firstName lastName mobileNumber");
+    }
+
+    // Completed shopper jobs (history), paginated.
+    async findShopperHistory(shopperId: string, page = 1, limit = 10) {
+        const skip = (page - 1) * limit;
+        const query: any = {
+            shopper: shopperId,
+            status: "delivered",
+            isActive: true,
+        };
+        const [items, total] = await Promise.all([
+            BuyForMeRequestModel.find(query)
+                .sort({ deliveredAt: -1, updatedAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate("user", "firstName lastName mobileNumber"),
+            BuyForMeRequestModel.countDocuments(query),
+        ]);
+        return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 }

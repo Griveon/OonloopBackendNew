@@ -26,11 +26,17 @@ buyForMeRoutes.get("/my", authMiddleware, c.getMy);
 // shopper: offer/accept (before /get/:id and /:id/* so they don't collide)
 buyForMeRoutes.get("/rider/requests", authMiddleware, c.getOpenRequests);
 buyForMeRoutes.get("/rider/bookings", authMiddleware, c.getShopperRequests);
+buyForMeRoutes.get("/rider/history", authMiddleware, c.getShopperHistory);
 
 buyForMeRoutes.get("/get/:id", authMiddleware, c.getById);
 buyForMeRoutes.get("/:id/track", authMiddleware, c.track);
 buyForMeRoutes.post("/:id/accept", authMiddleware, c.accept);
 buyForMeRoutes.post("/:id/bill", authMiddleware, c.setBill);
+
+// shopper: fulfilment / delivery
+buyForMeRoutes.put("/:id/status", authMiddleware, c.advanceStatus);
+buyForMeRoutes.get("/:id/delivery-otp", authMiddleware, c.getDeliveryOtp);
+buyForMeRoutes.post("/:id/verify-delivery", authMiddleware, c.verifyDelivery);
 
 // shopper: per-item status
 buyForMeRoutes.put("/items/:itemId/status", authMiddleware, c.updateItemStatus);

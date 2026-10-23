@@ -83,6 +83,20 @@ const buyForMeSchema = new Schema<IBuyForMeRequestDocument>(
 
         shopper: { type: Schema.Types.ObjectId, ref: "User", index: true },
 
+        // Delivery handoff — OTP the customer gives the shopper on arrival.
+        customerVerification: {
+            deliveryOtp: { type: String, select: false },
+            otpVerified: { type: Boolean, default: false },
+            signatureUrl: { type: String, trim: true },
+            verifiedAt: { type: Date },
+        },
+
+        // Shopper fulfilment timestamps
+        shoppingStartedAt: Date,
+        readyAt: Date,
+        outForDeliveryAt: Date,
+        deliveredAt: Date,
+
         isActive: { type: Boolean, default: true },
     },
     { timestamps: true }
