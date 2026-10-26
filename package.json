@@ -4,7 +4,7 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "test": "tsx --test src/tests/variant-cart-integrity.test.ts src/tests/vendor-category-ranking.test.ts src/tests/product-ranking.test.ts src/tests/performance-optimization.test.ts",
+    "test": "tsx --test src/tests/variant-cart-integrity.test.ts src/tests/vendor-category-ranking.test.ts src/tests/product-ranking.test.ts src/tests/performance-optimization.test.ts src/tests/manualdelivery.test.ts",
     "dev": "nodemon --watch src --exec tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",

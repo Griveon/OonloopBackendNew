@@ -41,6 +41,8 @@ import buyForMeRoutes from "../modules/buyforme/routes/buyforme.routes.js";
 import userPreferenceRoutes from "../modules/userpreference/routes/userprefrence.routes.js";
 import preorderRoutes from "../modules/preorder/routes/preorder.routes.js";
 import appVersionRoutes from "../modules/appversions/routes/appversion.routes.js";
+import manualDeliveryRoutes from "../modules/manualdelivery/routes/manualdelivery.routes.js";
+import manualDeliveryDriverRoutes from "../modules/manualdelivery/routes/manualdelivery-driver.routes.js";
 
 const router = Router();
 
@@ -141,5 +143,9 @@ router.use("/buyforme", buyForMeRoutes);
 router.use("/preorder", preorderRoutes);
 
 router.use("/appversion", appVersionRoutes);
+
+router.use("/manual-deliveries", manualDeliveryRoutes);
+
+router.use("/driver/manual-deliveries", manualDeliveryDriverRoutes);
 
 export default router;
