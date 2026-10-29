@@ -147,5 +147,6 @@ router.use("/appversion", appVersionRoutes);
 router.use("/manual-deliveries", manualDeliveryRoutes);
 
 router.use("/driver/manual-deliveries", manualDeliveryDriverRoutes);
+router.use("/driverorders/manual-deliveries", manualDeliveryDriverRoutes);
 
 export default router;

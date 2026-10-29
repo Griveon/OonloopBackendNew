@@ -407,6 +407,291 @@ export class ManualDeliveryRepository {
     }
 
     /**
+     * Finds manual deliveries that are currently available for drivers to take
+     * (status = CREATED, driver = null, isActive = true).
+     */
+    async findAvailableDeliveries(
+        filters: {
+            search?: string;
+            city?: string;
+            deliveryNumber?: string;
+            startDate?: Date;
+            endDate?: Date;
+        } = {},
+        pagination: IPaginationOptions = { page: 1, limit: 10 }
+    ): Promise<{
+        deliveries: IManualDeliveryDocument[];
+        total: number;
+    }> {
+        const query: Record<string, any> = {
+            isActive: true,
+            status: MANUAL_DELIVERY_STATUS.CREATED,
+            $or: [
+                { driver: { $exists: false } },
+                { driver: null },
+            ],
+        };
+
+        const andConditions: any[] = [];
+
+        if (filters.city && filters.city.trim()) {
+            const cityRegex = new RegExp(filters.city.trim(), "i");
+            andConditions.push({
+                $or: [
+                    { "pickup.city": cityRegex },
+                    { "dropoff.city": cityRegex },
+                ],
+            });
+        }
+
+        if (filters.deliveryNumber && filters.deliveryNumber.trim()) {
+            andConditions.push({
+                deliveryNumber: filters.deliveryNumber.trim(),
+            });
+        }
+
+        if (filters.startDate || filters.endDate) {
+            const dateQuery: Record<string, any> = {};
+            if (filters.startDate) dateQuery.$gte = filters.startDate;
+            if (filters.endDate) dateQuery.$lte = filters.endDate;
+            andConditions.push({ createdAt: dateQuery });
+        }
+
+        if (filters.search && filters.search.trim()) {
+            const term = filters.search.trim();
+            const searchRegex = new RegExp(term, "i");
+            andConditions.push({
+                $or: [
+                    { deliveryNumber: searchRegex },
+                    { "pickup.storeName": searchRegex },
+                    { "pickup.addressLine1": searchRegex },
+                    { "pickup.city": searchRegex },
+                    { "customer.name": searchRegex },
+                    { "dropoff.addressLine1": searchRegex },
+                    { "dropoff.city": searchRegex },
+                    { "dropoff.landmark": searchRegex },
+                ],
+            });
+        }
+
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
+        }
+
+        const page = Math.max(1, pagination.page || 1);
+        const limit = Math.min(100, Math.max(1, pagination.limit || 10));
+        const skip = (page - 1) * limit;
+
+        const [deliveries, total] = await Promise.all([
+            ManualDeliveryModel.find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate("vendor", "firstName lastName mobileNumber email")
+                .populate("vendorProfile", "storeName storeLocationAddress storeLogo")
+                .populate("createdBy", "firstName lastName")
+                .lean(),
+            ManualDeliveryModel.countDocuments(query),
+        ]);
+
+        return {
+            deliveries: deliveries as unknown as IManualDeliveryDocument[],
+            total,
+        };
+    }
+
+    /**
+     * Driver takes an available manual delivery atomically.
+     * Transitions status from CREATED -> ACCEPTED and assigns the driver.
+     */
+    async driverTakeOrderAtomic(
+        deliveryId: string | Types.ObjectId,
+        driverProfileId: Types.ObjectId,
+        driverUserId: Types.ObjectId,
+        driverSnapshot: any,
+        statusHistoryEntry: any,
+        assignmentHistoryEntry: any
+    ): Promise<IManualDeliveryDocument | null> {
+        const id = new Types.ObjectId(deliveryId.toString());
+        return (await ManualDeliveryModel.findOneAndUpdate(
+            {
+                _id: id,
+                status: MANUAL_DELIVERY_STATUS.CREATED,
+                $or: [
+                    { driver: { $exists: false } },
+                    { driver: null },
+                ],
+                isActive: true,
+            },
+            {
+                $set: {
+                    driver: driverProfileId,
+                    driverUser: driverUserId,
+                    driverSnapshot,
+                    status: MANUAL_DELIVERY_STATUS.ACCEPTED,
+                    assignedAt: new Date(),
+                    acceptedAt: new Date(),
+                    rejectionReason: null,
+                },
+                $push: {
+                    statusHistory: statusHistoryEntry,
+                    assignmentHistory: assignmentHistoryEntry,
+                },
+            },
+            { new: true }
+        )
+            .populate("vendor", "firstName lastName mobileNumber email")
+            .populate("vendorProfile", "storeName storeLocationAddress storeLogo")
+            .populate("driver", "vehicleType vehicleNumber profileStatus")
+            .populate("driverUser", "firstName lastName mobileNumber")
+            .populate("createdBy", "firstName lastName")) as unknown as IManualDeliveryDocument | null;
+    }
+
+    /**
+     * Fetches past delivery history for a driver (DELIVERED, FAILED, CANCELLED).
+     */
+    async findDriverHistory(
+        driverProfileId: string | Types.ObjectId,
+        filters: {
+            search?: string;
+            startDate?: Date;
+            endDate?: Date;
+            status?: string;
+        } = {},
+        pagination: IPaginationOptions = { page: 1, limit: 10 }
+    ): Promise<{
+        deliveries: IManualDeliveryDocument[];
+        total: number;
+    }> {
+        const profileId = new Types.ObjectId(driverProfileId.toString());
+        const query: Record<string, any> = {
+            isActive: true,
+            driver: profileId,
+        };
+
+        if (filters.status && filters.status in MANUAL_DELIVERY_STATUS) {
+            query.status = filters.status;
+        } else {
+            query.status = {
+                $in: [
+                    MANUAL_DELIVERY_STATUS.DELIVERED,
+                    MANUAL_DELIVERY_STATUS.FAILED,
+                    MANUAL_DELIVERY_STATUS.CANCELLED,
+                ],
+            };
+        }
+
+        if (filters.startDate || filters.endDate) {
+            query.createdAt = {};
+            if (filters.startDate) query.createdAt.$gte = filters.startDate;
+            if (filters.endDate) query.createdAt.$lte = filters.endDate;
+        }
+
+        if (filters.search && filters.search.trim()) {
+            const term = filters.search.trim();
+            const searchRegex = new RegExp(term, "i");
+            query.$or = [
+                { deliveryNumber: searchRegex },
+                { "pickup.storeName": searchRegex },
+                { "customer.name": searchRegex },
+                { "customer.mobileNumber": searchRegex },
+                { "dropoff.addressLine1": searchRegex },
+                { "dropoff.city": searchRegex },
+            ];
+        }
+
+        const page = Math.max(1, pagination.page || 1);
+        const limit = Math.min(100, Math.max(1, pagination.limit || 10));
+        const skip = (page - 1) * limit;
+
+        const [deliveries, total] = await Promise.all([
+            ManualDeliveryModel.find(query)
+                .sort({ deliveredAt: -1, updatedAt: -1, createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .populate("vendor", "firstName lastName mobileNumber email")
+                .populate("vendorProfile", "storeName storeLocationAddress storeLogo")
+                .populate("createdBy", "firstName lastName")
+                .lean(),
+            ManualDeliveryModel.countDocuments(query),
+        ]);
+
+        return {
+            deliveries: deliveries as unknown as IManualDeliveryDocument[],
+            total,
+        };
+    }
+
+    /**
+     * Aggregates stats for an active driver profile.
+     */
+    async getDriverStats(driverProfileId: string | Types.ObjectId): Promise<{
+        totalDelivered: number;
+        activeDeliveries: number;
+        todayDelivered: number;
+        totalFailed: number;
+        assignedPendingAcceptance: number;
+    }> {
+        const profileId = new Types.ObjectId(driverProfileId.toString());
+
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+
+        const [
+            totalDelivered,
+            activeDeliveries,
+            todayDelivered,
+            totalFailed,
+            assignedPendingAcceptance,
+        ] = await Promise.all([
+            ManualDeliveryModel.countDocuments({
+                driver: profileId,
+                status: MANUAL_DELIVERY_STATUS.DELIVERED,
+                isActive: true,
+            }),
+            ManualDeliveryModel.countDocuments({
+                driver: profileId,
+                status: {
+                    $in: [
+                        MANUAL_DELIVERY_STATUS.ACCEPTED,
+                        MANUAL_DELIVERY_STATUS.PICKED_UP,
+                        MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                        MANUAL_DELIVERY_STATUS.REACHED,
+                    ],
+                },
+                isActive: true,
+            }),
+            ManualDeliveryModel.countDocuments({
+                driver: profileId,
+                status: MANUAL_DELIVERY_STATUS.DELIVERED,
+                deliveredAt: { $gte: startOfToday, $lte: endOfToday },
+                isActive: true,
+            }),
+            ManualDeliveryModel.countDocuments({
+                driver: profileId,
+                status: MANUAL_DELIVERY_STATUS.FAILED,
+                isActive: true,
+            }),
+            ManualDeliveryModel.countDocuments({
+                driver: profileId,
+                status: MANUAL_DELIVERY_STATUS.ASSIGNED,
+                isActive: true,
+            }),
+        ]);
+
+        return {
+            totalDelivered,
+            activeDeliveries,
+            todayDelivered,
+            totalFailed,
+            assignedPendingAcceptance,
+        };
+    }
+
+    /**
      * Updates editable fields on a delivery.
      */
     async updateById(
@@ -419,3 +704,4 @@ export class ManualDeliveryRepository {
         })) as unknown as IManualDeliveryDocument | null;
     }
 }
+

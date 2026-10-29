@@ -2,6 +2,8 @@ import { Types } from "mongoose";
 import { ManualDeliveryRepository } from "../repositories/manualdelivery.repository.js";
 import { ManualDeliveryDistanceService } from "./manualdelivery-distance.service.js";
 import { ManualDeliveryMapLinkService } from "./manualdelivery-maplink.service.js";
+import { ManualDeliveryWhatsAppService } from "./manualdelivery-whatsapp.service.js";
+import { ManualDeliveryNotificationService } from "./manualdelivery-notification.service.js";
 import { AppError, BadRequestException } from "../../../utils/appError.js";
 import {
     MANUAL_DELIVERY_STATUS,
@@ -21,6 +23,8 @@ export class ManualDeliveryService {
     private repo = new ManualDeliveryRepository();
     private distanceService = new ManualDeliveryDistanceService();
     private mapLinkService = new ManualDeliveryMapLinkService();
+    private whatsappService = new ManualDeliveryWhatsAppService();
+    private notificationService = new ManualDeliveryNotificationService();
 
     /**
      * Checks if a user has admin privileges.
@@ -404,6 +408,11 @@ export class ManualDeliveryService {
 
         const manualDelivery = await this.repo.create(createPayload);
 
+        await this.whatsappService.sendCreated(manualDelivery);
+
+        // Notify all active drivers that a new manual delivery order is available to take
+        this.notificationService.notifyDriversNewAvailableDelivery(manualDelivery);
+
         return manualDelivery;
     }
 
@@ -523,6 +532,7 @@ export class ManualDeliveryService {
                 latitude?: number | null;
                 longitude?: number | null;
                 formattedAddress?: string;
+                mapLink?: string | null;
             };
             customerNotes?: string;
         }
@@ -686,6 +696,12 @@ export class ManualDeliveryService {
             );
         }
 
+        // Notify assigned driver with push notification
+        this.notificationService.notifyAssignedDriver(
+            assigned,
+            driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId)
+        );
+
         return assigned;
     }
 
@@ -710,17 +726,16 @@ export class ManualDeliveryService {
         }
 
         // Strict Rider Acceptance Cancellation Guard
+        const acceptedStatuses: ManualDeliveryStatus[] = [
+            MANUAL_DELIVERY_STATUS.ACCEPTED,
+            MANUAL_DELIVERY_STATUS.PICKED_UP,
+            MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY,
+            MANUAL_DELIVERY_STATUS.REACHED,
+        ];
         const isRiderAccepted =
-            delivery.status === MANUAL_DELIVERY_STATUS.ACCEPTED ||
-            delivery.status === "ACCEPTED" ||
             Boolean(delivery.acceptedAt) ||
             Boolean(delivery.driver && delivery.acceptedAt) ||
-            [
-                MANUAL_DELIVERY_STATUS.ACCEPTED,
-                MANUAL_DELIVERY_STATUS.PICKED_UP,
-                MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY,
-                MANUAL_DELIVERY_STATUS.REACHED,
-            ].includes(delivery.status);
+            acceptedStatuses.includes(delivery.status);
 
         if (isRiderAccepted) {
             throw new BadRequestException(
@@ -809,7 +824,7 @@ export class ManualDeliveryService {
     }
 
     /**
-     * Retrieves an assigned manual delivery for the authenticated driver.
+     * Retrieves an assigned or available manual delivery for the authenticated driver.
      */
     async getDriverDeliveryById(deliveryId: string, userId: string) {
         const driverProfile = await this.getDriverProfileForUser(userId);
@@ -819,11 +834,16 @@ export class ManualDeliveryService {
             throw new AppError("Manual delivery not found", 404);
         }
 
+        // Available deliveries (CREATED with no assigned driver) are accessible for viewing
+        // so drivers can inspect order details before taking it.
+        const isAvailableOrder =
+            delivery.status === MANUAL_DELIVERY_STATUS.CREATED && !delivery.driver;
+
         const isDriver =
             delivery.driver?.toString() === driverProfile._id.toString() ||
             (delivery.driver as any)?._id?.toString() === driverProfile._id.toString();
 
-        if (!isDriver) {
+        if (!isAvailableOrder && !isDriver) {
             throw new AppError(
                 "You are not authorized to view this manual delivery",
                 403
@@ -928,6 +948,9 @@ export class ManualDeliveryService {
             );
         }
 
+        // Broadcast notification to all drivers that delivery has returned to available pool
+        this.notificationService.notifyDriversNewAvailableDelivery(rejected);
+
         return rejected;
     }
 
@@ -1013,6 +1036,198 @@ export class ManualDeliveryService {
             );
         }
 
+        // Notify vendor about status update
+        this.notificationService.notifyVendorStatusUpdate(
+            updated,
+            newStatus,
+            remark || failureReason
+        );
+
         return updated;
     }
+
+    /**
+     * Lists manual deliveries currently available in the pool for any driver to take.
+     */
+    async listAvailableDeliveries(
+        userId: string,
+        params: {
+            page?: number;
+            limit?: number;
+            search?: string;
+            city?: string;
+            deliveryNumber?: string;
+            startDate?: string;
+            endDate?: string;
+        } = {}
+    ) {
+        // Ensure caller is a registered, active driver profile
+        const driverProfile = await this.getDriverProfileForUser(userId);
+
+        if (
+            driverProfile.profileStatus === "suspended" ||
+            driverProfile.profileStatus === "rejected"
+        ) {
+            throw new AppError(
+                `Driver profile is currently ${driverProfile.profileStatus} and cannot browse deliveries`,
+                403
+            );
+        }
+
+        const pagination: IPaginationOptions = {
+            page: Number(params.page) || 1,
+            limit: Number(params.limit) || 10,
+            sortBy: "createdAt",
+            sortOrder: "desc",
+        };
+
+        const filters: any = {
+            search: params.search,
+            city: params.city,
+            deliveryNumber: params.deliveryNumber,
+            startDate: params.startDate ? new Date(params.startDate) : undefined,
+            endDate: params.endDate ? new Date(params.endDate) : undefined,
+        };
+
+        const result = await this.repo.findAvailableDeliveries(
+            filters,
+            pagination
+        );
+
+        return {
+            deliveries: result.deliveries,
+            total: result.total,
+            page: pagination.page,
+            limit: pagination.limit,
+            totalPages: Math.max(1, Math.ceil(result.total / pagination.limit)),
+        };
+    }
+
+    /**
+     * Driver takes an available manual delivery directly from the pool.
+     * Atomically transitions status from CREATED -> ACCEPTED and assigns the driver.
+     * Mirrors vendor orders takeOrder flow.
+     */
+    async driverTake(deliveryId: string, userId: string) {
+        const driverProfile = await this.getDriverProfileForUser(userId);
+
+        if (
+            driverProfile.profileStatus === "suspended" ||
+            driverProfile.profileStatus === "rejected"
+        ) {
+            throw new AppError(
+                `Your driver profile is currently ${driverProfile.profileStatus} and cannot take deliveries`,
+                400
+            );
+        }
+
+        const driverUser = driverProfile.user as any;
+        const driverName =
+            `${driverUser?.firstName || ""} ${driverUser?.lastName || ""}`.trim() ||
+            "Driver";
+
+        const driverSnapshot = {
+            driverId: driverProfile._id,
+            name: driverName,
+            phone: driverUser?.mobileNumber || "",
+            vehicleType: driverProfile.vehicleType || "bike",
+            vehicleNumber: driverProfile.vehicleNumber || "",
+        };
+
+        const statusHistoryEntry = {
+            status: MANUAL_DELIVERY_STATUS.ACCEPTED,
+            title: STATUS_DISPLAY_TITLES.ACCEPTED,
+            remark: `Delivery taken and accepted by driver ${driverName} (${driverSnapshot.vehicleNumber}).`,
+            updatedBy: new Types.ObjectId(userId),
+            updatedByRole: "driver",
+            updatedAt: new Date(),
+        };
+
+        const assignmentHistoryEntry = {
+            driver: driverProfile._id,
+            driverName,
+            action: "ACCEPTED",
+            assignedAt: new Date(),
+            respondedAt: new Date(),
+        };
+
+        const taken = await this.repo.driverTakeOrderAtomic(
+            deliveryId,
+            driverProfile._id as Types.ObjectId,
+            driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId),
+            driverSnapshot,
+            statusHistoryEntry,
+            assignmentHistoryEntry
+        );
+
+        if (!taken) {
+            throw new AppError(
+                "This delivery order has already been taken by another driver or is no longer available.",
+                409
+            );
+        }
+
+        // Notify vendor that order has been taken and accepted by driver
+        this.notificationService.notifyVendorStatusUpdate(
+            taken,
+            MANUAL_DELIVERY_STATUS.ACCEPTED,
+            `Delivery accepted by driver ${driverName}.`
+        );
+
+        return taken;
+    }
+
+    /**
+     * Lists past completed or terminal deliveries for the authenticated driver.
+     */
+    async listDriverHistory(
+        userId: string,
+        params: {
+            page?: number;
+            limit?: number;
+            search?: string;
+            status?: string;
+            startDate?: string;
+            endDate?: string;
+        } = {}
+    ) {
+        const driverProfile = await this.getDriverProfileForUser(userId);
+
+        const pagination: IPaginationOptions = {
+            page: Number(params.page) || 1,
+            limit: Number(params.limit) || 10,
+            sortBy: "deliveredAt",
+            sortOrder: "desc",
+        };
+
+        const filters: any = {
+            search: params.search,
+            status: params.status,
+            startDate: params.startDate ? new Date(params.startDate) : undefined,
+            endDate: params.endDate ? new Date(params.endDate) : undefined,
+        };
+
+        const result = await this.repo.findDriverHistory(
+            driverProfile._id,
+            filters,
+            pagination
+        );
+
+        return {
+            deliveries: result.deliveries,
+            total: result.total,
+            page: pagination.page,
+            limit: pagination.limit,
+            totalPages: Math.max(1, Math.ceil(result.total / pagination.limit)),
+        };
+    }
+
+    /**
+     * Retrieves aggregated performance stats for the authenticated driver.
+     */
+    async getDriverStats(userId: string) {
+        const driverProfile = await this.getDriverProfileForUser(userId);
+        return await this.repo.getDriverStats(driverProfile._id);
+    }
 }
+

@@ -44,7 +44,7 @@ export function extractCoordinatesFromUrlString(
     // 1. Fragment coordinates with @lat,lng (e.g. /@12.971598,77.594562 or /@12.971598,77.594562,15z)
     const atRegex = /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/;
     const atMatch = decoded.match(atRegex);
-    if (atMatch) {
+    if (atMatch && atMatch[1] && atMatch[2]) {
         const lat = parseFloat(atMatch[1]);
         const lng = parseFloat(atMatch[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -55,7 +55,7 @@ export function extractCoordinatesFromUrlString(
     // 2. Google Maps place data format: !3d<lat>!4d<lng> (3d = latitude, 4d = longitude)
     const data3d4dRegex = /!3d(-?\d+(?:\.\d+)?).*?!4d(-?\d+(?:\.\d+)?)/;
     const match3d4d = decoded.match(data3d4dRegex);
-    if (match3d4d) {
+    if (match3d4d && match3d4d[1] && match3d4d[2]) {
         const lat = parseFloat(match3d4d[1]);
         const lng = parseFloat(match3d4d[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -66,7 +66,7 @@ export function extractCoordinatesFromUrlString(
     // Also check inverted !4d<lng>!3d<lat>
     const data4d3dRegex = /!4d(-?\d+(?:\.\d+)?).*?!3d(-?\d+(?:\.\d+)?)/;
     const match4d3d = decoded.match(data4d3dRegex);
-    if (match4d3d) {
+    if (match4d3d && match4d3d[1] && match4d3d[2]) {
         const lng = parseFloat(match4d3d[1]);
         const lat = parseFloat(match4d3d[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -78,7 +78,7 @@ export function extractCoordinatesFromUrlString(
     const destRegex =
         /[?&](?:destination|daddr)=(-?\d+(?:\.\d+)?)(?:,|%2C|\+)(-?\d+(?:\.\d+)?)/i;
     const destMatch = decoded.match(destRegex);
-    if (destMatch) {
+    if (destMatch && destMatch[1] && destMatch[2]) {
         const lat = parseFloat(destMatch[1]);
         const lng = parseFloat(destMatch[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -90,7 +90,7 @@ export function extractCoordinatesFromUrlString(
     const queryRegex =
         /[?&](?:q|query|ll|center|loc|sll)=(-?\d+(?:\.\d+)?)(?:,|%2C|\+)(-?\d+(?:\.\d+)?)/i;
     const queryMatch = decoded.match(queryRegex);
-    if (queryMatch) {
+    if (queryMatch && queryMatch[1] && queryMatch[2]) {
         const lat = parseFloat(queryMatch[1]);
         const lng = parseFloat(queryMatch[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -102,7 +102,7 @@ export function extractCoordinatesFromUrlString(
     const pathRegex =
         /\/(?:place|search|dir)\/(-?\d+(?:\.\d+)?)(?:,|%2C|\+)(-?\d+(?:\.\d+)?)/i;
     const pathMatch = decoded.match(pathRegex);
-    if (pathMatch) {
+    if (pathMatch && pathMatch[1] && pathMatch[2]) {
         const lat = parseFloat(pathMatch[1]);
         const lng = parseFloat(pathMatch[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -114,7 +114,7 @@ export function extractCoordinatesFromUrlString(
     const genericRegex =
         /(?:^|[^\d.-])(-?\d{1,2}\.\d{3,})(?:,|%2C|\s+|\+)(-?\d{1,3}\.\d{3,})(?:[^\d.-]|$)/;
     const genericMatch = decoded.match(genericRegex);
-    if (genericMatch) {
+    if (genericMatch && genericMatch[1] && genericMatch[2]) {
         const lat = parseFloat(genericMatch[1]);
         const lng = parseFloat(genericMatch[2]);
         if (isValidCoordinate(lat, lng)) {
@@ -128,7 +128,7 @@ export function extractCoordinatesFromUrlString(
 /**
  * Extracts coordinates from an HTML response body if present in metadata, canonical, or script tags.
  */
-function extractCoordinatesFromHtml(html: string): ICoordinates | null {
+export function extractCoordinatesFromHtml(html: string): ICoordinates | null {
     if (!html || typeof html !== "string") {
         return null;
     }
@@ -138,14 +138,16 @@ function extractCoordinatesFromHtml(html: string): ICoordinates | null {
         /<meta\s+[^>]*(?:property=["']og:url["']|itemprop=["']image["']|name=["']twitter:image["'])[^>]*content=["']([^"']+)["']/gi;
     let match: RegExpExecArray | null;
     while ((match = metaUrlRegex.exec(html)) !== null) {
-        const coords = extractCoordinatesFromUrlString(match[1]);
-        if (coords) return coords;
+        if (match[1]) {
+            const coords = extractCoordinatesFromUrlString(match[1]);
+            if (coords) return coords;
+        }
     }
 
     // 2. Canonical link
     const canonicalRegex = /<link\s+[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']/i;
     const canonicalMatch = html.match(canonicalRegex);
-    if (canonicalMatch) {
+    if (canonicalMatch && canonicalMatch[1]) {
         const coords = extractCoordinatesFromUrlString(canonicalMatch[1]);
         if (coords) return coords;
     }

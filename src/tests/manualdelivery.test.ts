@@ -18,6 +18,8 @@ import {
     extractCoordinatesFromUrlString,
 } from "../modules/manualdelivery/services/manualdelivery-maplink.service.js";
 import { BadRequestException } from "../utils/appError.js";
+import axios from "axios";
+import { ManualDeliveryWhatsAppService } from "../modules/manualdelivery/services/manualdelivery-whatsapp.service.js";
 
 // Test IDs
 const vendorUserId = new Types.ObjectId().toString();
@@ -115,6 +117,21 @@ const sampleUsers: Record<string, any> = {
  */
 function createManualDeliveryTestHarness() {
     const service: any = new ManualDeliveryService();
+    service.whatsappService = { async sendCreated() { return null; } };
+    service.notificationService = {
+        broadcasts: [] as any[],
+        assignedPushes: [] as any[],
+        vendorUpdates: [] as any[],
+        async notifyDriversNewAvailableDelivery(delivery: any) {
+            this.broadcasts.push(delivery);
+        },
+        async notifyAssignedDriver(delivery: any, driverUserId: any) {
+            this.assignedPushes.push({ delivery, driverUserId });
+        },
+        async notifyVendorStatusUpdate(delivery: any, status: any, remark: any) {
+            this.vendorUpdates.push({ delivery, status, remark });
+        },
+    };
     const storeMap = new Map<string, any>();
     let counter = 1;
 
@@ -367,6 +384,97 @@ function createManualDeliveryTestHarness() {
             storeMap.set(id.toString(), doc);
             return { ...doc };
         },
+
+        async findAvailableDeliveries(filters: any, pagination: any) {
+            let items = Array.from(storeMap.values()).filter(
+                (d) => d.isActive && d.status === MANUAL_DELIVERY_STATUS.CREATED && !d.driver
+            );
+            if (filters.city) {
+                const s = filters.city.toLowerCase();
+                items = items.filter(
+                    (d) =>
+                        d.pickup?.city?.toLowerCase()?.includes(s) ||
+                        d.dropoff?.city?.toLowerCase()?.includes(s)
+                );
+            }
+            if (filters.search) {
+                const s = filters.search.toLowerCase();
+                items = items.filter(
+                    (d) =>
+                        d.deliveryNumber.toLowerCase().includes(s) ||
+                        d.customer.name.toLowerCase().includes(s)
+                );
+            }
+            const total = items.length;
+            const page = pagination.page || 1;
+            const limit = pagination.limit || 10;
+            const start = (page - 1) * limit;
+            const deliveries = items.slice(start, start + limit);
+            return { deliveries, total };
+        },
+
+        async driverTakeOrderAtomic(
+            deliveryId: string,
+            driverProfileIdParam: any,
+            driverUserIdParam: any,
+            driverSnapshot: any,
+            statusHistoryEntry: any,
+            assignmentHistoryEntry: any
+        ) {
+            const doc = storeMap.get(deliveryId.toString());
+            if (!doc || doc.status !== MANUAL_DELIVERY_STATUS.CREATED || doc.driver) {
+                return null;
+            }
+            doc.driver = driverProfileIdParam;
+            doc.driverUser = driverUserIdParam;
+            doc.driverSnapshot = driverSnapshot;
+            doc.status = MANUAL_DELIVERY_STATUS.ACCEPTED;
+            doc.assignedAt = new Date();
+            doc.acceptedAt = new Date();
+            doc.statusHistory.push(statusHistoryEntry);
+            doc.assignmentHistory.push(assignmentHistoryEntry);
+            storeMap.set(deliveryId.toString(), doc);
+            return { ...doc };
+        },
+
+        async findDriverHistory(driverProfileIdParam: any, filters: any, pagination: any) {
+            let items = Array.from(storeMap.values()).filter(
+                (d) =>
+                    d.isActive &&
+                    d.driver?.toString() === driverProfileIdParam.toString() &&
+                    [
+                        MANUAL_DELIVERY_STATUS.DELIVERED,
+                        MANUAL_DELIVERY_STATUS.FAILED,
+                        MANUAL_DELIVERY_STATUS.CANCELLED,
+                    ].includes(d.status)
+            );
+            const total = items.length;
+            const page = pagination.page || 1;
+            const limit = pagination.limit || 10;
+            const start = (page - 1) * limit;
+            const deliveries = items.slice(start, start + limit);
+            return { deliveries, total };
+        },
+
+        async getDriverStats(driverProfileIdParam: any) {
+            const items = Array.from(storeMap.values()).filter(
+                (d) => d.isActive && d.driver?.toString() === driverProfileIdParam.toString()
+            );
+            return {
+                totalDelivered: items.filter((d) => d.status === MANUAL_DELIVERY_STATUS.DELIVERED).length,
+                activeDeliveries: items.filter((d) =>
+                    [
+                        MANUAL_DELIVERY_STATUS.ACCEPTED,
+                        MANUAL_DELIVERY_STATUS.PICKED_UP,
+                        MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY,
+                        MANUAL_DELIVERY_STATUS.REACHED,
+                    ].includes(d.status)
+                ).length,
+                todayDelivered: items.filter((d) => d.status === MANUAL_DELIVERY_STATUS.DELIVERED).length,
+                totalFailed: items.filter((d) => d.status === MANUAL_DELIVERY_STATUS.FAILED).length,
+                assignedPendingAcceptance: items.filter((d) => d.status === MANUAL_DELIVERY_STATUS.ASSIGNED).length,
+            };
+        },
     };
 
     return { service, storeMap };
@@ -375,6 +483,78 @@ function createManualDeliveryTestHarness() {
 // =========================================================================
 // TEST SUITE
 // =========================================================================
+
+test("Manual creation sends the saved customer, reference and store through MSG91", async (t) => {
+    const { service, storeMap } = createManualDeliveryTestHarness();
+    service.whatsappService = new ManualDeliveryWhatsAppService();
+    const config = {
+        MSG91_AUTHKEY: "test-key",
+        MSG91_WHATSAPP_BASE_URL: "https://example.test/whatsapp/bulk/",
+        MSG91_WHATSAPP_NUMBER: "919999999999",
+        MSG91_WHATSAPP_TEMPLATE_MANUAL_ORDER_CREATED: "manual_order_created",
+        MSG91_WHATSAPP_NAMESPACE_MANUAL_ORDER_CREATED: "6c83fda4_2ac0_43c3_a26a_780e38020061",
+    };
+    for (const [key, value] of Object.entries(config)) {
+        const previous = process.env[key];
+        process.env[key] = value;
+        t.after(() => {
+            if (previous === undefined) delete process.env[key];
+            else process.env[key] = previous;
+        });
+    }
+    const calls: any[] = [];
+    t.mock.method(axios, "post", async (url: string, payload: any, options: any) => {
+        assert.ok(storeMap.size > 0, "Order must be persisted before notifying");
+        calls.push(payload);
+        assert.equal(url, config.MSG91_WHATSAPP_BASE_URL);
+        assert.equal(options.headers.authkey, "test-key");
+        return { data: { request_id: "test-request" } };
+    });
+    for (const mobileNumber of ["9876543210", "919876543210"]) {
+        const delivery = await service.createManualDelivery(vendorUserId, {
+            customer: { name: " Customer Name ", mobileNumber, countryCode: "+91" },
+            dropoff: { addressLine1: "Customer address" },
+        });
+        const sent = calls.at(-1);
+        assert.equal(sent.integrated_number, config.MSG91_WHATSAPP_NUMBER);
+        assert.equal(sent.content_type, "template");
+        assert.equal(sent.payload.messaging_product, "whatsapp");
+        assert.equal(sent.payload.type, "template");
+        assert.deepEqual(sent.payload.template, {
+            name: "manual_order_created",
+            language: { code: "en", policy: "deterministic" },
+            namespace: config.MSG91_WHATSAPP_NAMESPACE_MANUAL_ORDER_CREATED,
+            to_and_components: [{
+                to: ["919876543210"],
+                components: {
+                    body_1: { type: "text", value: "Customer Name" },
+                    body_2: { type: "text", value: delivery.deliveryNumber },
+                    body_3: { type: "text", value: "Sharma Kirana Store" },
+                },
+            }],
+        });
+    }
+    assert.equal(calls.length, 2);
+
+    t.mock.method(axios, "post", async () => { throw new Error("Provider unavailable"); });
+    const saved = await service.createManualDelivery(vendorUserId, {
+        customer: { name: "Customer Name", mobileNumber: "9876543210" },
+        dropoff: { addressLine1: "Customer address" },
+    });
+    assert.ok(storeMap.has(saved._id));
+
+    const noSend = t.mock.method(axios, "post", async () => { throw new Error("Unexpected send"); });
+    service.repo.create = async () => { throw new Error("Database unavailable"); };
+    await assert.rejects(service.createManualDelivery(vendorUserId, {
+        customer: { name: "Customer Name", mobileNumber: "9876543210" },
+        dropoff: { addressLine1: "Customer address" },
+    }), /Database unavailable/);
+    assert.equal(noSend.mock.callCount(), 0);
+
+    delete process.env.MSG91_WHATSAPP_TEMPLATE_MANUAL_ORDER_CREATED;
+    assert.equal(await service.whatsappService.sendCreated(saved), null);
+    assert.equal(noSend.mock.callCount(), 0);
+});
 
 test("Manual Delivery - Distance service calculates Haversine straight-line distance accurately", async () => {
     const distanceService = new ManualDeliveryDistanceService();
@@ -1018,5 +1198,69 @@ test("Manual Delivery - Rider acceptance cancellation guard strictly disallows c
             message: "Once accepted by the rider, cancellation is not allowed.",
         }
     );
+});
+
+test("Manual Delivery - Driver sees available orders, views details, takes order directly, and push notification triggers", async () => {
+    const { service } = createManualDeliveryTestHarness();
+
+    // Vendor creates a manual delivery order -> triggers push broadcast to drivers
+    const created = await service.createManualDelivery(vendorUserId, {
+        customer: {
+            name: "Ananya Roy",
+            mobileNumber: "9123456780",
+        },
+        dropoff: {
+            addressLine1: "Flat 402, Sunshine Apartments",
+            city: "Vadodara",
+        },
+    });
+
+    assert.equal(created.status, MANUAL_DELIVERY_STATUS.CREATED);
+    assert.ok(!created.driver);
+    // Verified push notification was queued for drivers
+    assert.equal(service.notificationService.broadcasts.length, 1);
+    assert.equal(service.notificationService.broadcasts[0].deliveryNumber, created.deliveryNumber);
+
+    // Driver fetches available orders
+    const available = await service.listAvailableDeliveries(driverUserId, {});
+    assert.equal(available.total, 1);
+    assert.equal(available.deliveries[0].deliveryNumber, created.deliveryNumber);
+
+    // Driver views available order details BEFORE taking it (should NOT throw 403!)
+    const details = await service.getDriverDeliveryById(created._id, driverUserId);
+    assert.equal(details.deliveryNumber, created.deliveryNumber);
+
+    // Driver directly takes order from available pool (mirrors vendor orders takeOrder)
+    const taken = await service.driverTake(created._id, driverUserId);
+    assert.equal(taken.status, MANUAL_DELIVERY_STATUS.ACCEPTED);
+    assert.equal(taken.driver.toString(), driverProfileId.toString());
+    assert.ok(taken.acceptedAt);
+    assert.equal(taken.driverSnapshot.name, "Vikram Rathore");
+
+    // Once taken, order is no longer in available pool
+    const availableAfter = await service.listAvailableDeliveries(driverUserId, {});
+    assert.equal(availableAfter.total, 0);
+
+    // Another driver concurrently attempting to take the same order receives 409 error
+    await assert.rejects(
+        () => service.driverTake(created._id, otherDriverUserId),
+        /already been taken by another driver/
+    );
+
+    // Driver completes milestones -> DELIVERED
+    await service.driverUpdateStatus(created._id, driverUserId, MANUAL_DELIVERY_STATUS.PICKED_UP);
+    await service.driverUpdateStatus(created._id, driverUserId, MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY);
+    await service.driverUpdateStatus(created._id, driverUserId, MANUAL_DELIVERY_STATUS.REACHED);
+    await service.driverUpdateStatus(created._id, driverUserId, MANUAL_DELIVERY_STATUS.DELIVERED);
+
+    // Driver history now reflects the completed delivery
+    const history = await service.listDriverHistory(driverUserId, {});
+    assert.equal(history.total, 1);
+    assert.equal(history.deliveries[0].status, MANUAL_DELIVERY_STATUS.DELIVERED);
+
+    // Driver stats reflect 1 delivered delivery
+    const stats = await service.getDriverStats(driverUserId);
+    assert.equal(stats.totalDelivered, 1);
+    assert.equal(stats.activeDeliveries, 0);
 });
 

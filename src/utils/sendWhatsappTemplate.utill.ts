@@ -3,15 +3,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const AUTH_KEY =
-    process.env.MSG91_AUTHKEY as string;
-
-const BASE_URL =
-    process.env.MSG91_WHATSAPP_BASE_URL as string;
-
-const WHATSAPP_NUMBER =
-    process.env.MSG91_WHATSAPP_NUMBER as string;
-
 export interface WhatsAppTemplateComponent {
     type: "text";
     value: string;
@@ -30,6 +21,7 @@ export interface SendWhatsAppTemplateParams {
     crqid?: string;
 
     languageCode?: string;
+    namespace?: string;
 }
 
 export const sendWhatsAppTemplate = async ({
@@ -38,7 +30,11 @@ export const sendWhatsAppTemplate = async ({
     components = {},
     crqid,
     languageCode = "en",
+    namespace,
 }: SendWhatsAppTemplateParams): Promise<any> => {
+    const AUTH_KEY = process.env.MSG91_AUTHKEY;
+    const BASE_URL = process.env.MSG91_WHATSAPP_BASE_URL;
+    const WHATSAPP_NUMBER = process.env.MSG91_WHATSAPP_NUMBER;
     try {
         if (!AUTH_KEY) {
             throw new Error(
@@ -102,13 +98,7 @@ export const sendWhatsAppTemplate = async ({
                             "deterministic",
                     },
 
-                    /**
-                     * MSG91 generated cURL
-                     * returned namespace: null.
-                     *
-                     * We can omit namespace
-                     * completely.
-                     */
+                    ...(namespace ? { namespace } : {}),
 
                     to_and_components: [
                         {

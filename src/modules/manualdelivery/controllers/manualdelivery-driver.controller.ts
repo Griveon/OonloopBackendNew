@@ -15,13 +15,146 @@ export class ManualDeliveryDriverController {
     }
 
     private getParamId(req: Request): string {
-        const raw = req.params?.id;
+        const raw =
+            req.params?.id ||
+            req.params?.orderId ||
+            req.params?.deliveryId;
         const id = Array.isArray(raw) ? raw[0] : raw;
         if (!id || typeof id !== "string") {
             throw new AppError("Invalid or missing delivery ID", 400);
         }
         return id;
     }
+
+    /**
+     * GET /driver/manual-deliveries/available
+     * Lists manual deliveries available for drivers to take.
+     */
+    getAvailableDeliveries = async (req: Request, res: Response) => {
+        try {
+            const userId = this.getUserId(req);
+            const result = await this.service.listAvailableDeliveries(
+                userId,
+                req.query
+            );
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.paginated(
+                        "Available manual deliveries fetched successfully",
+                        result.deliveries,
+                        result.page,
+                        result.limit,
+                        result.total
+                    )
+                );
+        } catch (error: any) {
+            const statusCode = error.statusCode || 500;
+            return res
+                .status(statusCode)
+                .json(
+                    ResponseUtil.badRequest(
+                        error.message || "Failed to fetch available manual deliveries"
+                    )
+                );
+        }
+    };
+
+    /**
+     * POST/PUT /driver/manual-deliveries/:id/take
+     * Driver takes and accepts an available manual delivery directly from the pool.
+     */
+    takeOrder = async (req: Request, res: Response) => {
+        try {
+            const userId = this.getUserId(req);
+            const id = this.getParamId(req);
+
+            const taken = await this.service.driverTake(id, userId);
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        "Delivery taken and accepted successfully",
+                        taken
+                    )
+                );
+        } catch (error: any) {
+            const statusCode = error.statusCode || 500;
+            return res
+                .status(statusCode)
+                .json(
+                    ResponseUtil.badRequest(
+                        error.message || "Failed to take delivery order"
+                    )
+                );
+        }
+    };
+
+    /**
+     * GET /driver/manual-deliveries/history
+     * Lists past completed or terminal manual deliveries for the driver.
+     */
+    getHistory = async (req: Request, res: Response) => {
+        try {
+            const userId = this.getUserId(req);
+            const result = await this.service.listDriverHistory(
+                userId,
+                req.query
+            );
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.paginated(
+                        "Driver manual delivery history fetched successfully",
+                        result.deliveries,
+                        result.page,
+                        result.limit,
+                        result.total
+                    )
+                );
+        } catch (error: any) {
+            const statusCode = error.statusCode || 500;
+            return res
+                .status(statusCode)
+                .json(
+                    ResponseUtil.badRequest(
+                        error.message || "Failed to fetch delivery history"
+                    )
+                );
+        }
+    };
+
+    /**
+     * GET /driver/manual-deliveries/stats
+     * Returns delivery statistics for the authenticated driver.
+     */
+    getStats = async (req: Request, res: Response) => {
+        try {
+            const userId = this.getUserId(req);
+            const stats = await this.service.getDriverStats(userId);
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        "Driver manual delivery stats fetched successfully",
+                        stats
+                    )
+                );
+        } catch (error: any) {
+            const statusCode = error.statusCode || 500;
+            return res
+                .status(statusCode)
+                .json(
+                    ResponseUtil.badRequest(
+                        error.message || "Failed to fetch driver stats"
+                    )
+                );
+        }
+    };
 
     /**
      * GET /driver/manual-deliveries
