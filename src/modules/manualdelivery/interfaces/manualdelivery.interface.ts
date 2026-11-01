@@ -105,6 +105,7 @@ export interface IManualDelivery {
     distance: IManualDeliveryDistance;
 
     // Driver assignment
+    driverModel?: "DriverProfile" | "User";
     driver?: Types.ObjectId | null | undefined;
     driverUser?: Types.ObjectId | null | undefined;
     driverSnapshot?: IDriverSnapshot | null | undefined;
@@ -138,6 +139,7 @@ export interface IManualDeliveryDocument extends IManualDelivery, Document {}
 export interface IManualDeliveryFilter {
     vendor?: Types.ObjectId | string;
     driver?: Types.ObjectId | string;
+    driverUser?: Types.ObjectId | string;
     status?: ManualDeliveryStatus | { $in: ManualDeliveryStatus[] };
     search?: string;
     customerMobile?: string;

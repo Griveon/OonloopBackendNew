@@ -7,11 +7,12 @@ export class ManualDeliveryController {
     private service = new ManualDeliveryService();
 
     private getUserId(req: Request): string {
-        const userId = req.user?.id;
+        const user = req.user as any;
+        const userId = user?.id || user?._id || user?.userId;
         if (!userId) {
             throw new AppError("Authentication required", 401);
         }
-        return userId;
+        return String(userId);
     }
 
     private getParamId(req: Request): string {

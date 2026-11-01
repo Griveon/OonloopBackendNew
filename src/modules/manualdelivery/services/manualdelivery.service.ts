@@ -435,7 +435,9 @@ export class ManualDeliveryService {
 
         const isAssignedDriver =
             delivery.driverUser?.toString() === userId.toString() ||
-            (delivery.driverUser as any)?._id?.toString() === userId.toString();
+            (delivery.driverUser as any)?._id?.toString() === userId.toString() ||
+            delivery.driver?.toString() === userId.toString() ||
+            (delivery.driver as any)?._id?.toString() === userId.toString();
 
         if (!isAdmin && !isVendorOwner && !isAssignedDriver) {
             throw new AppError(
@@ -639,42 +641,72 @@ export class ManualDeliveryService {
 
         // Validate driver existence and eligibility
         const driverProfile = await this.repo.findDriverProfile(driverId);
-        if (!driverProfile) {
-            throw new AppError("Driver not found", 404);
-        }
+        let driverProfileId: Types.ObjectId;
+        let driverUserId: Types.ObjectId;
+        let driverUser: any;
+        let driverName: string;
+        let driverPhone: string;
+        let vehicleType = "bike";
+        let vehicleNumber = "";
+        let driverModel: "DriverProfile" | "User" = "DriverProfile";
 
-        if (
-            driverProfile.profileStatus === "suspended" ||
-            driverProfile.profileStatus === "rejected"
-        ) {
-            throw new AppError(
-                `Driver profile is currently ${driverProfile.profileStatus} and cannot be assigned`,
-                400
-            );
-        }
+        if (driverProfile) {
+            if (
+                driverProfile.profileStatus === "suspended" ||
+                driverProfile.profileStatus === "rejected"
+            ) {
+                throw new AppError(
+                    `Driver profile is currently ${driverProfile.profileStatus} and cannot be assigned`,
+                    400
+                );
+            }
 
-        const driverUser = driverProfile.user as any;
-        const driverName = `${driverUser?.firstName || ""} ${driverUser?.lastName || ""}`.trim() || "Driver";
+            driverProfileId = driverProfile._id as Types.ObjectId;
+            driverUser = driverProfile.user as any;
+            driverUserId = driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId);
+            driverName = `${driverUser?.firstName || ""} ${driverUser?.lastName || ""}`.trim() || "Driver";
+            driverPhone = driverUser?.mobileNumber || "";
+            vehicleType = driverProfile.vehicleType || "bike";
+            vehicleNumber = driverProfile.vehicleNumber || "";
+            driverModel = "DriverProfile";
+        } else {
+            // Driver profile not found - fall back to User record by userId
+            const userDoc = await this.repo.findUserById(driverId);
+            if (!userDoc) {
+                throw new AppError("Driver not found", 404);
+            }
+
+            driverProfileId = new Types.ObjectId(userDoc._id.toString());
+            driverUser = userDoc;
+            driverUserId = new Types.ObjectId(userDoc._id.toString());
+            driverName = `${userDoc.firstName || ""} ${userDoc.lastName || ""}`.trim() || "Driver";
+            driverPhone = userDoc.mobileNumber || "";
+            vehicleType = "bike";
+            vehicleNumber = "";
+            driverModel = "User";
+        }
 
         const driverSnapshot = {
-            driverId: driverProfile._id,
+            driverId: driverProfileId,
             name: driverName,
-            phone: driverUser?.mobileNumber || "",
-            vehicleType: driverProfile.vehicleType || "bike",
-            vehicleNumber: driverProfile.vehicleNumber || "",
+            phone: driverPhone,
+            vehicleType,
+            vehicleNumber,
         };
 
         const statusHistoryEntry = {
             status: MANUAL_DELIVERY_STATUS.ASSIGNED,
             title: STATUS_DISPLAY_TITLES.ASSIGNED,
-            remark: `Assigned to driver ${driverName} (${driverSnapshot.vehicleNumber}).`,
+            remark: vehicleNumber
+                ? `Assigned to driver ${driverName} (${vehicleNumber}).`
+                : `Assigned to driver ${driverName}.`,
             updatedBy: new Types.ObjectId(userId),
             updatedByRole: this.isUserAdmin(user) ? "admin" : "vendor",
             updatedAt: new Date(),
         };
 
         const assignmentHistoryEntry = {
-            driver: driverProfile._id,
+            driver: driverProfileId,
             driverName,
             action: "ASSIGNED",
             assignedAt: new Date(),
@@ -682,11 +714,12 @@ export class ManualDeliveryService {
 
         const assigned = await this.repo.assignDriverAtomic(
             deliveryId,
-            driverProfile._id as Types.ObjectId,
-            driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId),
+            driverProfileId,
+            driverUserId,
             driverSnapshot,
             statusHistoryEntry,
-            assignmentHistoryEntry
+            assignmentHistoryEntry,
+            driverModel
         );
 
         if (!assigned) {
@@ -699,7 +732,7 @@ export class ManualDeliveryService {
         // Notify assigned driver with push notification
         this.notificationService.notifyAssignedDriver(
             assigned,
-            driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId)
+            driverUserId
         );
 
         return assigned;
@@ -780,14 +813,27 @@ export class ManualDeliveryService {
 
     /**
      * Resolves the DriverProfile for the authenticated user.
+     * If driver profile is not found, falls back to using the authenticated user record and ID.
      */
     async getDriverProfileForUser(userId: string) {
         const driverProfile = await this.repo.findDriverProfile(userId);
         if (!driverProfile) {
-            throw new AppError(
-                "Driver profile not found for this authenticated account",
-                404
-            );
+            const user = await this.repo.findUserById(userId);
+            if (!user) {
+                throw new AppError(
+                    "Driver profile not found and user account not found",
+                    404
+                );
+            }
+            return {
+                _id: new Types.ObjectId(user._id.toString()),
+                user: user,
+                profileStatus: "approved",
+                vehicleType: "bike",
+                vehicleNumber: "",
+                isOnline: true,
+                isFallbackUser: true,
+            };
         }
         return driverProfile;
     }
@@ -807,6 +853,7 @@ export class ManualDeliveryService {
 
         const filter: IManualDeliveryFilter = {
             driver: driverProfile._id.toString(),
+            driverUser: userId,
         };
 
         if (params.status && params.status in MANUAL_DELIVERY_STATUS) {
@@ -839,9 +886,21 @@ export class ManualDeliveryService {
         const isAvailableOrder =
             delivery.status === MANUAL_DELIVERY_STATUS.CREATED && !delivery.driver;
 
+        const driverProfileIdStr = driverProfile._id.toString();
+        const userIdStr = userId.toString();
+        const deliveryDriverId =
+            (delivery.driver as any)?._id?.toString() ||
+            delivery.driver?.toString();
+        const deliveryDriverUserId =
+            (delivery.driverUser as any)?._id?.toString() ||
+            delivery.driverUser?.toString() ||
+            delivery.driverSnapshot?.driverId?.toString();
+
         const isDriver =
-            delivery.driver?.toString() === driverProfile._id.toString() ||
-            (delivery.driver as any)?._id?.toString() === driverProfile._id.toString();
+            deliveryDriverId === driverProfileIdStr ||
+            deliveryDriverId === userIdStr ||
+            deliveryDriverUserId === userIdStr ||
+            deliveryDriverUserId === driverProfileIdStr;
 
         if (!isAvailableOrder && !isDriver) {
             throw new AppError(
@@ -879,7 +938,8 @@ export class ManualDeliveryService {
         const accepted = await this.repo.driverAcceptAtomic(
             deliveryId,
             driverProfile._id as Types.ObjectId,
-            statusHistoryEntry
+            statusHistoryEntry,
+            new Types.ObjectId(userId)
         );
 
         if (!accepted) {
@@ -938,7 +998,8 @@ export class ManualDeliveryService {
             driverProfile._id as Types.ObjectId,
             rejectionReason,
             statusHistoryEntry,
-            assignmentHistoryEntry
+            assignmentHistoryEntry,
+            new Types.ObjectId(userId)
         );
 
         if (!rejected) {
@@ -1026,7 +1087,8 @@ export class ManualDeliveryService {
             newStatus,
             timestampField,
             extraUpdates,
-            statusHistoryEntry
+            statusHistoryEntry,
+            new Types.ObjectId(userId)
         );
 
         if (!updated) {
@@ -1061,7 +1123,7 @@ export class ManualDeliveryService {
             endDate?: string;
         } = {}
     ) {
-        // Ensure caller is a registered, active driver profile
+        // Ensure caller is a registered, active driver profile or valid user
         const driverProfile = await this.getDriverProfileForUser(userId);
 
         if (
@@ -1137,7 +1199,9 @@ export class ManualDeliveryService {
         const statusHistoryEntry = {
             status: MANUAL_DELIVERY_STATUS.ACCEPTED,
             title: STATUS_DISPLAY_TITLES.ACCEPTED,
-            remark: `Delivery taken and accepted by driver ${driverName} (${driverSnapshot.vehicleNumber}).`,
+            remark: driverSnapshot.vehicleNumber
+                ? `Delivery taken and accepted by driver ${driverName} (${driverSnapshot.vehicleNumber}).`
+                : `Delivery taken and accepted by driver ${driverName}.`,
             updatedBy: new Types.ObjectId(userId),
             updatedByRole: "driver",
             updatedAt: new Date(),
@@ -1151,13 +1215,20 @@ export class ManualDeliveryService {
             respondedAt: new Date(),
         };
 
+        const isFallback = Boolean((driverProfile as any).isFallbackUser);
+        const driverModel: "DriverProfile" | "User" = isFallback ? "User" : "DriverProfile";
+        const driverUserId = driverUser?._id
+            ? (driverUser._id as Types.ObjectId)
+            : (driverProfile.user ? (driverProfile.user as Types.ObjectId) : new Types.ObjectId(userId));
+
         const taken = await this.repo.driverTakeOrderAtomic(
             deliveryId,
             driverProfile._id as Types.ObjectId,
-            driverUser?._id ? (driverUser._id as Types.ObjectId) : (driverProfile.user as Types.ObjectId),
+            driverUserId,
             driverSnapshot,
             statusHistoryEntry,
-            assignmentHistoryEntry
+            assignmentHistoryEntry,
+            driverModel
         );
 
         if (!taken) {
@@ -1210,7 +1281,8 @@ export class ManualDeliveryService {
         const result = await this.repo.findDriverHistory(
             driverProfile._id,
             filters,
-            pagination
+            pagination,
+            new Types.ObjectId(userId)
         );
 
         return {
@@ -1227,7 +1299,7 @@ export class ManualDeliveryService {
      */
     async getDriverStats(userId: string) {
         const driverProfile = await this.getDriverProfileForUser(userId);
-        return await this.repo.getDriverStats(driverProfile._id);
+        return await this.repo.getDriverStats(driverProfile._id, new Types.ObjectId(userId));
     }
 }
 

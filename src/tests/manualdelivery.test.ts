@@ -30,6 +30,7 @@ const driverUserId = new Types.ObjectId().toString();
 const driverProfileId = new Types.ObjectId().toString();
 const otherDriverUserId = new Types.ObjectId().toString();
 const otherDriverProfileId = new Types.ObjectId().toString();
+const driverWithoutProfileUserId = new Types.ObjectId().toString();
 
 const sampleVendorProfile = {
     _id: new Types.ObjectId(vendorProfileId),
@@ -110,6 +111,14 @@ const sampleUsers: Record<string, any> = {
     },
     [driverUserId]: sampleDriverProfile.user,
     [otherDriverUserId]: sampleOtherDriverProfile.user,
+    [driverWithoutProfileUserId]: {
+        _id: new Types.ObjectId(driverWithoutProfileUserId),
+        firstName: "Rajesh",
+        lastName: "Kumar",
+        mobileNumber: "9811223344",
+        role: "driver",
+        roles: ["driver"],
+    },
 };
 
 /**
@@ -191,9 +200,25 @@ function createManualDeliveryTestHarness() {
                 );
             }
 
-            if (filters.driver) {
+            if (filters.driver && filters.driverUser) {
                 items = items.filter(
-                    (d) => d.driver?.toString() === filters.driver.toString()
+                    (d) =>
+                        d.driver?.toString() === filters.driver.toString() ||
+                        d.driverUser?.toString() === filters.driverUser.toString() ||
+                        d.driver?.toString() === filters.driverUser.toString() ||
+                        d.driverUser?.toString() === filters.driver.toString()
+                );
+            } else if (filters.driver) {
+                items = items.filter(
+                    (d) =>
+                        d.driver?.toString() === filters.driver.toString() ||
+                        d.driverUser?.toString() === filters.driver.toString()
+                );
+            } else if (filters.driverUser) {
+                items = items.filter(
+                    (d) =>
+                        d.driver?.toString() === filters.driverUser.toString() ||
+                        d.driverUser?.toString() === filters.driverUser.toString()
                 );
             }
 
@@ -226,13 +251,15 @@ function createManualDeliveryTestHarness() {
             driverUserIdParam: any,
             driverSnapshot: any,
             statusHistoryEntry: any,
-            assignmentHistoryEntry: any
+            assignmentHistoryEntry: any,
+            driverModelParam: any = "DriverProfile"
         ) {
             const doc = storeMap.get(deliveryId.toString());
             if (!doc || doc.status !== MANUAL_DELIVERY_STATUS.CREATED) {
                 return null;
             }
 
+            doc.driverModel = driverModelParam;
             doc.driver = driverProfileIdParam;
             doc.driverUser = driverUserIdParam;
             doc.driverSnapshot = driverSnapshot;
@@ -247,12 +274,19 @@ function createManualDeliveryTestHarness() {
         async driverAcceptAtomic(
             deliveryId: string,
             driverProfileIdParam: any,
-            statusHistoryEntry: any
+            statusHistoryEntry: any,
+            driverUserIdParam?: any
         ) {
             const doc = storeMap.get(deliveryId.toString());
+            const matchesDriver =
+                doc &&
+                (doc.driver?.toString() === driverProfileIdParam.toString() ||
+                    (driverUserIdParam &&
+                        (doc.driver?.toString() === driverUserIdParam.toString() ||
+                            doc.driverUser?.toString() === driverUserIdParam.toString())));
             if (
                 !doc ||
-                doc.driver?.toString() !== driverProfileIdParam.toString() ||
+                !matchesDriver ||
                 doc.status !== MANUAL_DELIVERY_STATUS.ASSIGNED
             ) {
                 return null;
@@ -276,12 +310,19 @@ function createManualDeliveryTestHarness() {
             driverProfileIdParam: any,
             reason: string,
             statusHistoryEntry: any,
-            assignmentHistoryEntry: any
+            assignmentHistoryEntry: any,
+            driverUserIdParam?: any
         ) {
             const doc = storeMap.get(deliveryId.toString());
+            const matchesDriver =
+                doc &&
+                (doc.driver?.toString() === driverProfileIdParam.toString() ||
+                    (driverUserIdParam &&
+                        (doc.driver?.toString() === driverUserIdParam.toString() ||
+                            doc.driverUser?.toString() === driverUserIdParam.toString())));
             if (
                 !doc ||
-                doc.driver?.toString() !== driverProfileIdParam.toString() ||
+                !matchesDriver ||
                 doc.status !== MANUAL_DELIVERY_STATUS.ASSIGNED
             ) {
                 return null;
@@ -306,12 +347,19 @@ function createManualDeliveryTestHarness() {
             newStatus: string,
             timestampField: string,
             extraUpdates: any,
-            statusHistoryEntry: any
+            statusHistoryEntry: any,
+            driverUserIdParam?: any
         ) {
             const doc = storeMap.get(deliveryId.toString());
+            const matchesDriver =
+                doc &&
+                (doc.driver?.toString() === driverProfileIdParam.toString() ||
+                    (driverUserIdParam &&
+                        (doc.driver?.toString() === driverUserIdParam.toString() ||
+                            doc.driverUser?.toString() === driverUserIdParam.toString())));
             if (
                 !doc ||
-                doc.driver?.toString() !== driverProfileIdParam.toString() ||
+                !matchesDriver ||
                 !fromStatuses.includes(doc.status)
             ) {
                 return null;
@@ -419,12 +467,14 @@ function createManualDeliveryTestHarness() {
             driverUserIdParam: any,
             driverSnapshot: any,
             statusHistoryEntry: any,
-            assignmentHistoryEntry: any
+            assignmentHistoryEntry: any,
+            driverModelParam: any = "DriverProfile"
         ) {
             const doc = storeMap.get(deliveryId.toString());
             if (!doc || doc.status !== MANUAL_DELIVERY_STATUS.CREATED || doc.driver) {
                 return null;
             }
+            doc.driverModel = driverModelParam;
             doc.driver = driverProfileIdParam;
             doc.driverUser = driverUserIdParam;
             doc.driverSnapshot = driverSnapshot;
@@ -437,11 +487,14 @@ function createManualDeliveryTestHarness() {
             return { ...doc };
         },
 
-        async findDriverHistory(driverProfileIdParam: any, filters: any, pagination: any) {
+        async findDriverHistory(driverProfileIdParam: any, filters: any, pagination: any, driverUserIdParam?: any) {
             let items = Array.from(storeMap.values()).filter(
                 (d) =>
                     d.isActive &&
-                    d.driver?.toString() === driverProfileIdParam.toString() &&
+                    (d.driver?.toString() === driverProfileIdParam.toString() ||
+                        (driverUserIdParam &&
+                            (d.driver?.toString() === driverUserIdParam.toString() ||
+                                d.driverUser?.toString() === driverUserIdParam.toString()))) &&
                     [
                         MANUAL_DELIVERY_STATUS.DELIVERED,
                         MANUAL_DELIVERY_STATUS.FAILED,
@@ -456,9 +509,14 @@ function createManualDeliveryTestHarness() {
             return { deliveries, total };
         },
 
-        async getDriverStats(driverProfileIdParam: any) {
+        async getDriverStats(driverProfileIdParam: any, driverUserIdParam?: any) {
             const items = Array.from(storeMap.values()).filter(
-                (d) => d.isActive && d.driver?.toString() === driverProfileIdParam.toString()
+                (d) =>
+                    d.isActive &&
+                    (d.driver?.toString() === driverProfileIdParam.toString() ||
+                        (driverUserIdParam &&
+                            (d.driver?.toString() === driverUserIdParam.toString() ||
+                                d.driverUser?.toString() === driverUserIdParam.toString())))
             );
             return {
                 totalDelivered: items.filter((d) => d.status === MANUAL_DELIVERY_STATUS.DELIVERED).length,
@@ -1263,4 +1321,96 @@ test("Manual Delivery - Driver sees available orders, views details, takes order
     assert.equal(stats.totalDelivered, 1);
     assert.equal(stats.activeDeliveries, 0);
 });
+
+test("Manual Delivery - User ID fallback when driver profile is not found during driver assignment by vendor", async () => {
+    const { service } = createManualDeliveryTestHarness();
+
+    const created = await service.createManualDelivery(vendorUserId, {
+        customer: {
+            name: "Sunil Verma",
+            mobileNumber: "9123456781",
+        },
+        dropoff: {
+            addressLine1: "B-201, Shivalik Residency",
+            city: "Vadodara",
+        },
+    });
+
+    assert.equal(created.status, MANUAL_DELIVERY_STATUS.CREATED);
+
+    // Vendor assigns driver who has NO driver profile (driverWithoutProfileUserId)
+    const assigned = await service.assignDriver(created._id, vendorUserId, driverWithoutProfileUserId);
+    assert.equal(assigned.status, MANUAL_DELIVERY_STATUS.ASSIGNED);
+    assert.equal(assigned.driver.toString(), driverWithoutProfileUserId);
+    assert.equal(assigned.driverUser.toString(), driverWithoutProfileUserId);
+    assert.equal(assigned.driverSnapshot.name, "Rajesh Kumar");
+    assert.equal(assigned.driverSnapshot.phone, "9811223344");
+    assert.equal(assigned.driverSnapshot.driverId.toString(), driverWithoutProfileUserId);
+
+    // Driver without profile can view assigned delivery details
+    const details = await service.getDriverDeliveryById(created._id, driverWithoutProfileUserId);
+    assert.equal(details.deliveryNumber, created.deliveryNumber);
+
+    // Driver without profile can accept assignment
+    const accepted = await service.driverAccept(created._id, driverWithoutProfileUserId);
+    assert.equal(accepted.status, MANUAL_DELIVERY_STATUS.ACCEPTED);
+
+    // Driver without profile can update delivery milestone status
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.PICKED_UP);
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY);
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.DELIVERED);
+
+    // Driver without profile can view delivery history and stats
+    const history = await service.listDriverHistory(driverWithoutProfileUserId, {});
+    assert.equal(history.total, 1);
+    assert.equal(history.deliveries[0].status, MANUAL_DELIVERY_STATUS.DELIVERED);
+
+    const stats = await service.getDriverStats(driverWithoutProfileUserId);
+    assert.equal(stats.totalDelivered, 1);
+});
+
+test("Manual Delivery - Driver without driver profile browses available deliveries, takes order with user ID, and views stats", async () => {
+    const { service } = createManualDeliveryTestHarness();
+
+    const created = await service.createManualDelivery(vendorUserId, {
+        customer: {
+            name: "Pooja Mehta",
+            mobileNumber: "9123456782",
+        },
+        dropoff: {
+            addressLine1: "Flat 101, Galaxy Tower",
+            city: "Vadodara",
+        },
+    });
+
+    // Driver without profile can browse available deliveries without error
+    const available = await service.listAvailableDeliveries(driverWithoutProfileUserId, {});
+    assert.equal(available.total, 1);
+    assert.equal(available.deliveries[0].deliveryNumber, created.deliveryNumber);
+
+    // Driver without profile can view available delivery details before taking it
+    const details = await service.getDriverDeliveryById(created._id, driverWithoutProfileUserId);
+    assert.equal(details.deliveryNumber, created.deliveryNumber);
+
+    // Driver without profile can take available delivery using user ID
+    const taken = await service.driverTake(created._id, driverWithoutProfileUserId);
+    assert.equal(taken.status, MANUAL_DELIVERY_STATUS.ACCEPTED);
+    assert.equal(taken.driver.toString(), driverWithoutProfileUserId);
+    assert.equal(taken.driverSnapshot.name, "Rajesh Kumar");
+    assert.equal(taken.driverSnapshot.driverId.toString(), driverWithoutProfileUserId);
+
+    // Order is no longer in available pool
+    const availableAfter = await service.listAvailableDeliveries(driverWithoutProfileUserId, {});
+    assert.equal(availableAfter.total, 0);
+
+    // Driver without profile completes order
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.PICKED_UP);
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.OUT_FOR_DELIVERY);
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.REACHED);
+    await service.driverUpdateStatus(created._id, driverWithoutProfileUserId, MANUAL_DELIVERY_STATUS.DELIVERED);
+
+    const stats = await service.getDriverStats(driverWithoutProfileUserId);
+    assert.equal(stats.totalDelivered, 1);
+});
+
 

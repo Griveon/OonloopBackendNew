@@ -151,13 +151,39 @@ export class ManualDeliveryRepository {
         const query: Record<string, any> = {
             isActive: true,
         };
+        const andConditions: any[] = [];
 
         if (filters.vendor) {
             query.vendor = new Types.ObjectId(filters.vendor.toString());
         }
 
-        if (filters.driver) {
-            query.driver = new Types.ObjectId(filters.driver.toString());
+        if (filters.driver && filters.driverUser) {
+            const driverObjId = new Types.ObjectId(filters.driver.toString());
+            const driverUserObjId = new Types.ObjectId(filters.driverUser.toString());
+            andConditions.push({
+                $or: [
+                    { driver: driverObjId },
+                    { driver: driverUserObjId },
+                    { driverUser: driverUserObjId },
+                    { driverUser: driverObjId },
+                ],
+            });
+        } else if (filters.driver) {
+            const driverObjId = new Types.ObjectId(filters.driver.toString());
+            andConditions.push({
+                $or: [
+                    { driver: driverObjId },
+                    { driverUser: driverObjId },
+                ],
+            });
+        } else if (filters.driverUser) {
+            const driverUserObjId = new Types.ObjectId(filters.driverUser.toString());
+            andConditions.push({
+                $or: [
+                    { driver: driverUserObjId },
+                    { driverUser: driverUserObjId },
+                ],
+            });
         }
 
         if (filters.status) {
@@ -185,13 +211,19 @@ export class ManualDeliveryRepository {
         if (filters.search && filters.search.trim()) {
             const term = filters.search.trim();
             const searchRegex = new RegExp(term, "i");
-            query.$or = [
-                { deliveryNumber: searchRegex },
-                { "customer.name": searchRegex },
-                { "customer.mobileNumber": searchRegex },
-                { "dropoff.addressLine1": searchRegex },
-                { "dropoff.landmark": searchRegex },
-            ];
+            andConditions.push({
+                $or: [
+                    { deliveryNumber: searchRegex },
+                    { "customer.name": searchRegex },
+                    { "customer.mobileNumber": searchRegex },
+                    { "dropoff.addressLine1": searchRegex },
+                    { "dropoff.landmark": searchRegex },
+                ],
+            });
+        }
+
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
         }
 
         const page = Math.max(1, pagination.page || 1);
@@ -230,7 +262,8 @@ export class ManualDeliveryRepository {
         driverUserId: Types.ObjectId,
         driverSnapshot: any,
         statusHistoryEntry: any,
-        assignmentHistoryEntry: any
+        assignmentHistoryEntry: any,
+        driverModel: "DriverProfile" | "User" = "DriverProfile"
     ): Promise<IManualDeliveryDocument | null> {
         const id = new Types.ObjectId(deliveryId.toString());
         return (await ManualDeliveryModel.findOneAndUpdate(
@@ -241,6 +274,7 @@ export class ManualDeliveryRepository {
             },
             {
                 $set: {
+                    driverModel,
                     driver: driverProfileId,
                     driverUser: driverUserId,
                     driverSnapshot,
@@ -266,13 +300,19 @@ export class ManualDeliveryRepository {
     async driverAcceptAtomic(
         deliveryId: string | Types.ObjectId,
         driverProfileId: Types.ObjectId,
-        statusHistoryEntry: any
+        statusHistoryEntry: any,
+        driverUserId?: Types.ObjectId
     ): Promise<IManualDeliveryDocument | null> {
         const id = new Types.ObjectId(deliveryId.toString());
+        const driverConditions: any[] = [{ driver: driverProfileId }];
+        if (driverUserId) {
+            driverConditions.push({ driver: driverUserId }, { driverUser: driverUserId });
+        }
+
         return (await ManualDeliveryModel.findOneAndUpdate(
             {
                 _id: id,
-                driver: driverProfileId,
+                $or: driverConditions,
                 status: MANUAL_DELIVERY_STATUS.ASSIGNED,
                 isActive: true,
             },
@@ -304,18 +344,25 @@ export class ManualDeliveryRepository {
         driverProfileId: Types.ObjectId,
         reason: string,
         statusHistoryEntry: any,
-        assignmentHistoryEntry: any
+        assignmentHistoryEntry: any,
+        driverUserId?: Types.ObjectId
     ): Promise<IManualDeliveryDocument | null> {
         const id = new Types.ObjectId(deliveryId.toString());
+        const driverConditions: any[] = [{ driver: driverProfileId }];
+        if (driverUserId) {
+            driverConditions.push({ driver: driverUserId }, { driverUser: driverUserId });
+        }
+
         return (await ManualDeliveryModel.findOneAndUpdate(
             {
                 _id: id,
-                driver: driverProfileId,
+                $or: driverConditions,
                 status: MANUAL_DELIVERY_STATUS.ASSIGNED,
                 isActive: true,
             },
             {
                 $set: {
+                    driverModel: "DriverProfile",
                     status: MANUAL_DELIVERY_STATUS.CREATED,
                     driver: null,
                     driverUser: null,
@@ -342,13 +389,19 @@ export class ManualDeliveryRepository {
         newStatus: string,
         timestampField: string,
         extraUpdates: Record<string, any>,
-        statusHistoryEntry: any
+        statusHistoryEntry: any,
+        driverUserId?: Types.ObjectId
     ): Promise<IManualDeliveryDocument | null> {
         const id = new Types.ObjectId(deliveryId.toString());
+        const driverConditions: any[] = [{ driver: driverProfileId }];
+        if (driverUserId) {
+            driverConditions.push({ driver: driverUserId }, { driverUser: driverUserId });
+        }
+
         return (await ManualDeliveryModel.findOneAndUpdate(
             {
                 _id: id,
-                driver: driverProfileId,
+                $or: driverConditions,
                 status: { $in: fromStatuses },
                 isActive: true,
             } as any,
@@ -510,7 +563,8 @@ export class ManualDeliveryRepository {
         driverUserId: Types.ObjectId,
         driverSnapshot: any,
         statusHistoryEntry: any,
-        assignmentHistoryEntry: any
+        assignmentHistoryEntry: any,
+        driverModel: "DriverProfile" | "User" = "DriverProfile"
     ): Promise<IManualDeliveryDocument | null> {
         const id = new Types.ObjectId(deliveryId.toString());
         return (await ManualDeliveryModel.findOneAndUpdate(
@@ -525,6 +579,7 @@ export class ManualDeliveryRepository {
             },
             {
                 $set: {
+                    driverModel,
                     driver: driverProfileId,
                     driverUser: driverUserId,
                     driverSnapshot,
@@ -558,16 +613,23 @@ export class ManualDeliveryRepository {
             endDate?: Date;
             status?: string;
         } = {},
-        pagination: IPaginationOptions = { page: 1, limit: 10 }
+        pagination: IPaginationOptions = { page: 1, limit: 10 },
+        driverUserId?: string | Types.ObjectId
     ): Promise<{
         deliveries: IManualDeliveryDocument[];
         total: number;
     }> {
         const profileId = new Types.ObjectId(driverProfileId.toString());
+        const driverConditions: any[] = [{ driver: profileId }];
+        if (driverUserId) {
+            const uId = new Types.ObjectId(driverUserId.toString());
+            driverConditions.push({ driver: uId }, { driverUser: uId });
+        }
+
         const query: Record<string, any> = {
             isActive: true,
-            driver: profileId,
         };
+        const andConditions: any[] = [{ $or: driverConditions }];
 
         if (filters.status && filters.status in MANUAL_DELIVERY_STATUS) {
             query.status = filters.status;
@@ -590,14 +652,20 @@ export class ManualDeliveryRepository {
         if (filters.search && filters.search.trim()) {
             const term = filters.search.trim();
             const searchRegex = new RegExp(term, "i");
-            query.$or = [
-                { deliveryNumber: searchRegex },
-                { "pickup.storeName": searchRegex },
-                { "customer.name": searchRegex },
-                { "customer.mobileNumber": searchRegex },
-                { "dropoff.addressLine1": searchRegex },
-                { "dropoff.city": searchRegex },
-            ];
+            andConditions.push({
+                $or: [
+                    { deliveryNumber: searchRegex },
+                    { "pickup.storeName": searchRegex },
+                    { "customer.name": searchRegex },
+                    { "customer.mobileNumber": searchRegex },
+                    { "dropoff.addressLine1": searchRegex },
+                    { "dropoff.city": searchRegex },
+                ],
+            });
+        }
+
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
         }
 
         const page = Math.max(1, pagination.page || 1);
@@ -623,9 +691,12 @@ export class ManualDeliveryRepository {
     }
 
     /**
-     * Aggregates stats for an active driver profile.
+     * Aggregates stats for an active driver profile or driver user.
      */
-    async getDriverStats(driverProfileId: string | Types.ObjectId): Promise<{
+    async getDriverStats(
+        driverProfileId: string | Types.ObjectId,
+        driverUserId?: string | Types.ObjectId
+    ): Promise<{
         totalDelivered: number;
         activeDeliveries: number;
         todayDelivered: number;
@@ -633,6 +704,15 @@ export class ManualDeliveryRepository {
         assignedPendingAcceptance: number;
     }> {
         const profileId = new Types.ObjectId(driverProfileId.toString());
+        const driverConditions: any[] = [{ driver: profileId }];
+        if (driverUserId) {
+            const uId = new Types.ObjectId(driverUserId.toString());
+            driverConditions.push({ driver: uId }, { driverUser: uId });
+        }
+        const driverFilter =
+            driverConditions.length === 1
+                ? { driver: profileId }
+                : { $or: driverConditions };
 
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
@@ -648,12 +728,12 @@ export class ManualDeliveryRepository {
             assignedPendingAcceptance,
         ] = await Promise.all([
             ManualDeliveryModel.countDocuments({
-                driver: profileId,
+                ...driverFilter,
                 status: MANUAL_DELIVERY_STATUS.DELIVERED,
                 isActive: true,
             }),
             ManualDeliveryModel.countDocuments({
-                driver: profileId,
+                ...driverFilter,
                 status: {
                     $in: [
                         MANUAL_DELIVERY_STATUS.ACCEPTED,
@@ -665,18 +745,18 @@ export class ManualDeliveryRepository {
                 isActive: true,
             }),
             ManualDeliveryModel.countDocuments({
-                driver: profileId,
+                ...driverFilter,
                 status: MANUAL_DELIVERY_STATUS.DELIVERED,
                 deliveredAt: { $gte: startOfToday, $lte: endOfToday },
                 isActive: true,
             }),
             ManualDeliveryModel.countDocuments({
-                driver: profileId,
+                ...driverFilter,
                 status: MANUAL_DELIVERY_STATUS.FAILED,
                 isActive: true,
             }),
             ManualDeliveryModel.countDocuments({
-                driver: profileId,
+                ...driverFilter,
                 status: MANUAL_DELIVERY_STATUS.ASSIGNED,
                 isActive: true,
             }),

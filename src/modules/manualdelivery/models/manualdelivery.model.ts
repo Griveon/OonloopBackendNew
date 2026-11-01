@@ -400,9 +400,15 @@ const ManualDeliverySchema: Schema<IManualDeliveryDocument> =
                 }),
             },
 
+            driverModel: {
+                type: String,
+                enum: ["DriverProfile", "User"],
+                default: "DriverProfile",
+            },
+
             driver: {
                 type: Schema.Types.ObjectId,
-                ref: "DriverProfile",
+                refPath: "driverModel",
                 default: null,
                 index: true,
             },
