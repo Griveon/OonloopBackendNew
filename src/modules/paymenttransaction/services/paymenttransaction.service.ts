@@ -1417,6 +1417,8 @@ export class PaymentTransactionService {
                             vendorOrderNumber,
                             status: "placed",
                             paymentStatus: "success",
+                            sound: "order_alert",
+                            channelId: "new_paid_orders_v1",
                             click_action: "FLUTTER_NOTIFICATION_CLICK",
                         },
                     });

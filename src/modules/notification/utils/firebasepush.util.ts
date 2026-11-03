@@ -51,9 +51,27 @@ const initializeFirebaseAdmin = (): App => {
     return firebaseApp;
 };
 
-export const firebaseAdminApp = initializeFirebaseAdmin();
+export const getFirebaseAdminApp = (): App => initializeFirebaseAdmin();
 
-export const firebaseMessaging = getMessaging(firebaseAdminApp);
+export const getFirebaseMessaging = () => {
+    return getMessaging(initializeFirebaseAdmin());
+};
+
+export const firebaseAdminApp: App = (() => {
+    try {
+        return initializeFirebaseAdmin();
+    } catch {
+        return null as any;
+    }
+})();
+
+export const firebaseMessaging = (() => {
+    try {
+        return firebaseAdminApp ? getMessaging(firebaseAdminApp) : null as any;
+    } catch {
+        return null as any;
+    }
+})();
 
 const normalizeData = (data: Record<string, any> = {}): Record<string, string> => {
     const safeData: Record<string, string> = {};
@@ -63,6 +81,57 @@ const normalizeData = (data: Record<string, any> = {}): Record<string, string> =
     });
 
     return safeData;
+};
+
+const ORDER_ALERT_TYPES = new Set([
+    "DRIVER_NEW_PAID_ORDER",
+    "DRIVER_NEW_MANUAL_DELIVERY",
+    "MANUAL_DELIVERY_ASSIGNED",
+    "NEW_DELIVERY_ORDER_AVAILABLE",
+    "NEW_VENDOR_ORDER",
+    "VENDOR_NEW_ORDER",
+    "VENDOR_ORDER",
+    "VENDOR_ORDER_STATUS_UPDATED",
+    "MANUAL_DELIVERY_STATUS_UPDATED",
+]);
+
+export const resolvePushSoundAndChannel = (data?: Record<string, any>) => {
+    const notificationType = data?.type;
+
+    const isOrderAlert = Boolean(
+        (notificationType && ORDER_ALERT_TYPES.has(notificationType)) ||
+        data?.sound === "order_alert" ||
+        data?.channelId === "new_paid_orders_v1" ||
+        (typeof notificationType === "string" &&
+            (notificationType.includes("ORDER") || notificationType.includes("MANUAL_DELIVERY")) &&
+            !notificationType.includes("ADMIN"))
+    );
+
+    const sound =
+        data?.sound && data.sound !== "default"
+            ? String(data.sound)
+            : isOrderAlert
+            ? "order_alert"
+            : "default";
+
+    const channelId =
+        data?.channelId && data.channelId !== "default"
+            ? String(data.channelId)
+            : isOrderAlert
+            ? "new_paid_orders_v1"
+            : "default";
+
+    const apnsSound =
+        sound === "order_alert"
+            ? "order_alert.wav"
+            : sound;
+
+    return {
+        isOrderAlert,
+        sound,
+        channelId,
+        apnsSound,
+    };
 };
 
 export const sendFirebaseNotificationToToken = async ({
@@ -76,30 +145,45 @@ export const sendFirebaseNotificationToToken = async ({
     body: string;
     data?: Record<string, any>;
 }) => {
+    const { sound, channelId, apnsSound } = resolvePushSoundAndChannel(data);
+
     const message: Message = {
         token,
         notification: {
             title,
             body,
         },
-        data: normalizeData(data),
+        data: normalizeData({
+            ...data,
+            sound,
+            channelId,
+        }),
         android: {
             priority: "high",
             notification: {
-                sound: "default",
-                channelId: "default",
+                sound,
+                channelId,
             },
         },
         apns: {
+            headers: {
+                "apns-priority": "10",
+            },
             payload: {
                 aps: {
-                    sound: "default",
+                    alert: {
+                        title,
+                        body,
+                    },
+                    sound: apnsSound,
+                    contentAvailable: true,
                 },
             },
         },
     };
 
-    return await firebaseMessaging.send(message);
+    const messaging = firebaseMessaging || getFirebaseMessaging();
+    return await messaging.send(message);
 };
 
 export const sendFirebaseNotificationToMultipleTokens = async ({
@@ -121,18 +205,7 @@ export const sendFirebaseNotificationToMultipleTokens = async ({
         };
     }
 
-    const notificationType = data?.type;
-
-    const isDriverOrder =
-        notificationType === "DRIVER_NEW_PAID_ORDER";
-
-    const sound = isDriverOrder
-        ? "order_alert"
-        : "default";
-
-    const channelId = isDriverOrder
-        ? "new_paid_orders_v1"
-        : "default";
+    const { sound, channelId, apnsSound } = resolvePushSoundAndChannel(data);
 
     const message: MulticastMessage = {
         tokens,
@@ -142,7 +215,11 @@ export const sendFirebaseNotificationToMultipleTokens = async ({
             body,
         },
 
-        data: normalizeData(data),
+        data: normalizeData({
+            ...data,
+            sound,
+            channelId,
+        }),
 
         android: {
             priority: "high",
@@ -164,11 +241,13 @@ export const sendFirebaseNotificationToMultipleTokens = async ({
                         title,
                         body,
                     },
-                    sound: sound,
+                    sound: apnsSound,
+                    contentAvailable: true,
                 },
             },
         },
     };
 
-    return await firebaseMessaging.sendEachForMulticast(message);
+    const messaging = firebaseMessaging || getFirebaseMessaging();
+    return await messaging.sendEachForMulticast(message);
 };

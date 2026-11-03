@@ -430,6 +430,8 @@ export class FirebaseTokenService {
         }
 
         const notificationData = this.sanitizeNotificationData({
+            sound: "order_alert",
+            channelId: "new_paid_orders_v1",
             ...data,
             title,
             body,

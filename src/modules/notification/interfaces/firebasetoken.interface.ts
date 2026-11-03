@@ -38,5 +38,5 @@ export interface SendPushNotificationDTO {
     userId: string;
     title: string;
     body: string;
-    data?: Record<string, string>;
+    data?: Record<string, any>;
 }
