@@ -69,7 +69,7 @@ export class ManualDeliveryController {
                 .status(200)
                 .json(
                     ResponseUtil.success(
-                        "Distance calculated successfully",
+                        "Distance and pricing calculated successfully",
                         distance
                     )
                 );
@@ -80,6 +80,39 @@ export class ManualDeliveryController {
                 .json(
                     ResponseUtil.badRequest(
                         error.message || "Failed to calculate distance"
+                    )
+                );
+        }
+    };
+
+    /**
+     * GET /manual-deliveries/:id/summary
+     * Returns pricing breakdown and payment status for an existing manual delivery.
+     */
+    getSummary = async (req: Request, res: Response) => {
+        try {
+            const userId = this.getUserId(req);
+            const deliveryId = this.getParamId(req.params.id);
+            const summary = await this.service.getDeliverySummary(
+                deliveryId,
+                userId
+            );
+
+            return res
+                .status(200)
+                .json(
+                    ResponseUtil.success(
+                        "Delivery pricing summary retrieved successfully",
+                        summary
+                    )
+                );
+        } catch (error: any) {
+            const statusCode = error.statusCode || 500;
+            return res
+                .status(statusCode)
+                .json(
+                    ResponseUtil.badRequest(
+                        error.message || "Failed to retrieve delivery summary"
                     )
                 );
         }

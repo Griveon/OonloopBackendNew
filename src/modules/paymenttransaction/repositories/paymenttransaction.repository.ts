@@ -5,6 +5,7 @@ import { OrderVendorModel } from "../../vendororder/models/vendororder.model.js"
 import { PersonalShopperBookingModel } from "../../personalshopper/models/personalshopper.model.js";
 import { PreorderOrderModel } from "../../preorder/models/preorderorder.model.js";
 import { BuyForMeRequestModel } from "../../buyforme/models/buyforme.model.js";
+import { ManualDeliveryModel } from "../../manualdelivery/models/manualdelivery.model.js";
 
 export class PaymentTransactionRepository {
     async create(data: Partial<IPaymentTransaction>) {
@@ -297,5 +298,40 @@ export class PaymentTransactionRepository {
             },
             { new: true }
         );
+    }
+
+    // ----- Manual Delivery -----
+    async findManualDeliveryById(id: string) {
+        return await ManualDeliveryModel.findOne({
+            _id: id,
+            isActive: true,
+        });
+    }
+
+    async markManualDeliveryPaid(
+        deliveryId: string,
+        transactionId: string,
+        paymentMethodId?: string
+    ) {
+        const update: Record<string, any> = {
+            paymentTransaction: transactionId,
+            paymentStatus: "paid",
+            paidAt: new Date(),
+        };
+
+        if (paymentMethodId) {
+            update.paymentMethod = paymentMethodId;
+        }
+
+        return await ManualDeliveryModel.findByIdAndUpdate(
+            deliveryId,
+            { $set: update },
+            { new: true }
+        )
+            .populate("vendor", "firstName lastName mobileNumber email")
+            .populate("vendorProfile", "storeName storeLocationAddress storeLogo")
+            .populate("driver", "vehicleType vehicleNumber profileStatus isOnline")
+            .populate("driverUser", "firstName lastName mobileNumber")
+            .populate("createdBy", "firstName lastName email role");
     }
 }

@@ -11,6 +11,9 @@ import {
 } from "../modules/manualdelivery/validations/manualdelivery.validation.js";
 import {
     MANUAL_DELIVERY_STATUS,
+    MANUAL_DELIVERY_PAYMENT_STATUS,
+    MANUAL_DELIVERY_PRICING,
+    calculateManualDeliveryPricing,
     DISTANCE_CALCULATION_METHOD,
 } from "../modules/manualdelivery/constants/manualdelivery.constants.js";
 import {
@@ -1412,5 +1415,98 @@ test("Manual Delivery - Driver without driver profile browses available deliveri
     const stats = await service.getDriverStats(driverWithoutProfileUserId);
     assert.equal(stats.totalDelivered, 1);
 });
+
+test("Manual Delivery - Pricing calculation follows distance slabs (29, 49, 69) + 3rs platform fee + 18% GST", () => {
+    // Tier 1: <= 3 km => ₹29 delivery + ₹3 platform = ₹32 subtotal, ₹5.76 GST, ₹37.76 total
+    const tier1_1km = calculateManualDeliveryPricing(1.5);
+    assert.equal(tier1_1km.deliveryFee, 29);
+    assert.equal(tier1_1km.platformFee, 3);
+    assert.equal(tier1_1km.subtotal, 32);
+    assert.equal(tier1_1km.deliveryGst, 5.22);
+    assert.equal(tier1_1km.platformGst, 0.54);
+    assert.equal(tier1_1km.gstAmount, 5.76);
+    assert.equal(tier1_1km.totalAmount, 37.76);
+
+    const tier1_3km = calculateManualDeliveryPricing(3.0);
+    assert.equal(tier1_3km.deliveryFee, 29);
+    assert.equal(tier1_3km.totalAmount, 37.76);
+
+    // Tier 2: 3.01 to 6 km => ₹49 delivery + ₹3 platform = ₹52 subtotal, ₹9.36 GST, ₹61.36 total
+    const tier2_4km = calculateManualDeliveryPricing(4.5);
+    assert.equal(tier2_4km.deliveryFee, 49);
+    assert.equal(tier2_4km.platformFee, 3);
+    assert.equal(tier2_4km.subtotal, 52);
+    assert.equal(tier2_4km.deliveryGst, 8.82);
+    assert.equal(tier2_4km.platformGst, 0.54);
+    assert.equal(tier2_4km.gstAmount, 9.36);
+    assert.equal(tier2_4km.totalAmount, 61.36);
+
+    const tier2_6km = calculateManualDeliveryPricing(6.0);
+    assert.equal(tier2_6km.deliveryFee, 49);
+    assert.equal(tier2_6km.totalAmount, 61.36);
+
+    // Tier 3: > 6 km => ₹69 delivery + ₹3 platform = ₹72 subtotal, ₹12.96 GST, ₹84.96 total
+    const tier3_8km = calculateManualDeliveryPricing(8.2);
+    assert.equal(tier3_8km.deliveryFee, 69);
+    assert.equal(tier3_8km.platformFee, 3);
+    assert.equal(tier3_8km.subtotal, 72);
+    assert.equal(tier3_8km.deliveryGst, 12.42);
+    assert.equal(tier3_8km.platformGst, 0.54);
+    assert.equal(tier3_8km.gstAmount, 12.96);
+    assert.equal(tier3_8km.totalAmount, 84.96);
+
+    // Default / null distance fallback
+    const nullDist = calculateManualDeliveryPricing(null);
+    assert.equal(nullDist.deliveryFee, 29);
+    assert.equal(nullDist.platformFee, 3);
+    assert.equal(nullDist.totalAmount, 37.76);
+});
+
+test("Manual Delivery - Delivery creation snapshots distance pricing breakdown and initial pending payment status", async () => {
+    const { service } = createManualDeliveryTestHarness();
+
+    const created = await service.createManualDelivery(vendorUserId, {
+        customer: {
+            name: "Raj Patel",
+            mobileNumber: "9876543210",
+        },
+        dropoff: {
+            addressLine1: "B-201, Shanti Heights",
+            city: "Vadodara",
+            latitude: 22.2695,
+            longitude: 73.2019,
+        },
+    });
+
+    assert.ok(created.pricing);
+    assert.equal(typeof created.pricing.deliveryFee, "number");
+    assert.equal(created.pricing.platformFee, 3);
+    assert.equal(created.pricing.gstRate, 18);
+    assert.equal(created.paymentStatus, MANUAL_DELIVERY_PAYMENT_STATUS.PENDING);
+    assert.equal(created.paidAt, null);
+
+    // Pricing summary retrieval
+    const summary = await service.getDeliverySummary(created._id, vendorUserId);
+    assert.equal(summary.deliveryId.toString(), created._id.toString());
+    assert.equal(summary.pricing.platformFee, 3);
+    assert.equal(summary.paymentStatus, "pending");
+});
+
+test("Manual Delivery - Preview distance endpoint includes distance-based pricing breakdown", async () => {
+    const { service } = createManualDeliveryTestHarness();
+
+    const preview = await service.calculateDistancePreview(vendorUserId, {
+        dropoff: {
+            latitude: 22.2695,
+            longitude: 73.2019,
+        },
+    });
+
+    assert.ok(preview.pricing);
+    assert.equal(preview.pricing.platformFee, 3);
+    assert.equal(preview.pricing.gstRate, 18);
+    assert.ok(preview.pricing.totalAmount > 0);
+});
+
 
 

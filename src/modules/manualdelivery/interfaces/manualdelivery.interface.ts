@@ -1,6 +1,7 @@
 import type { Document, Types } from "mongoose";
 import type {
     ManualDeliveryStatus,
+    ManualDeliveryPaymentStatus,
     ManualDeliverySource,
     DistanceCalculationMethod,
     ManualDeliveryAssignmentAction,
@@ -54,6 +55,20 @@ export interface IManualDeliveryDropoff {
     mapLink?: string | null;
 }
 
+export interface IManualDeliveryPricing {
+    distanceKm: number | null;
+    deliveryFee: number;
+    platformFee: number;
+    deliveryGst: number;
+    platformGst: number;
+    totalDeliveryCharge: number;
+    totalPlatformCharge: number;
+    subtotal: number;
+    gstRate: number;
+    gstAmount: number;
+    totalAmount: number;
+}
+
 export interface IManualDeliveryDistance {
     valueKm: number | null;
     valueMeters: number | null;
@@ -103,6 +118,13 @@ export interface IManualDelivery {
     customerNotes?: string | undefined;
 
     distance: IManualDeliveryDistance;
+    pricing: IManualDeliveryPricing;
+
+    // Payment fields
+    paymentStatus: ManualDeliveryPaymentStatus;
+    paymentMethod?: Types.ObjectId | null | undefined;
+    paymentTransaction?: Types.ObjectId | null | undefined;
+    paidAt?: Date | null | undefined;
 
     // Driver assignment
     driverModel?: "DriverProfile" | "User";

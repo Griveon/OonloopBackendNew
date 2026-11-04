@@ -7,10 +7,12 @@ import { ManualDeliveryNotificationService } from "./manualdelivery-notification
 import { AppError, BadRequestException } from "../../../utils/appError.js";
 import {
     MANUAL_DELIVERY_STATUS,
+    MANUAL_DELIVERY_PAYMENT_STATUS,
     MANUAL_DELIVERY_SOURCE,
     STATUS_DISPLAY_TITLES,
     TERMINAL_STATUSES,
     EDITABLE_STATUSES,
+    calculateManualDeliveryPricing,
     type ManualDeliveryStatus,
 } from "../constants/manualdelivery.constants.js";
 import type {
@@ -184,10 +186,17 @@ export class ManualDeliveryService {
             }
         }
 
-        return this.distanceService.calculateDistance(
+        const distance = await this.distanceService.calculateDistance(
             pickupCoords,
             dropoffCoords
         );
+
+        const pricing = calculateManualDeliveryPricing(distance.valueKm);
+
+        return {
+            ...distance,
+            pricing,
+        };
     }
 
     /**
@@ -365,6 +374,9 @@ export class ManualDeliveryService {
             dropoffCoords
         );
 
+        // Calculate distance-based pricing (delivery fee + platform fee ₹3 + 18% GST)
+        const pricing = calculateManualDeliveryPricing(distance.valueKm);
+
         // Generate unique delivery reference number
         const deliveryNumber = await this.repo.generateDeliveryNumber();
 
@@ -397,6 +409,11 @@ export class ManualDeliveryService {
             },
             dropoff: dropoffSnapshot,
             distance,
+            pricing,
+            paymentStatus: MANUAL_DELIVERY_PAYMENT_STATUS.PENDING,
+            paymentMethod: null,
+            paymentTransaction: null,
+            paidAt: null,
             statusHistory: [statusHistoryEntry as any],
             assignmentHistory: [],
             isActive: true,
@@ -610,6 +627,9 @@ export class ManualDeliveryService {
                 dropoffCoords
             );
             setDoc["distance"] = newDistance;
+            if (delivery.paymentStatus !== MANUAL_DELIVERY_PAYMENT_STATUS.PAID) {
+                setDoc["pricing"] = calculateManualDeliveryPricing(newDistance.valueKm);
+            }
         }
 
         const updated = await this.repo.updateById(deliveryId, {
@@ -1300,6 +1320,43 @@ export class ManualDeliveryService {
     async getDriverStats(userId: string) {
         const driverProfile = await this.getDriverProfileForUser(userId);
         return await this.repo.getDriverStats(driverProfile._id, new Types.ObjectId(userId));
+    }
+
+    /**
+     * Retrieves pricing summary for an existing delivery.
+     */
+    async getDeliverySummary(deliveryId: string, userId: string) {
+        const delivery = await this.getDeliveryById(deliveryId, userId);
+        return {
+            deliveryId: delivery._id,
+            deliveryNumber: delivery.deliveryNumber,
+            distance: delivery.distance,
+            pricing: delivery.pricing,
+            paymentStatus: delivery.paymentStatus,
+            paymentTransaction: delivery.paymentTransaction,
+            paidAt: delivery.paidAt,
+        };
+    }
+
+    /**
+     * Marks a manual delivery as paid upon successful transaction verification
+     * and notifies drivers and customer.
+     */
+    async markDeliveryPaid(
+        deliveryId: string,
+        transactionId: string,
+        paymentMethodId?: string
+    ) {
+        const updated = await this.repo.markPaid(
+            deliveryId,
+            transactionId,
+            paymentMethodId
+        );
+        if (updated) {
+            void this.notificationService.notifyDriversNewAvailableDelivery(updated);
+            void this.whatsappService.sendCreated(updated);
+        }
+        return updated;
     }
 }
 

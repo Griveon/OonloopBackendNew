@@ -14,6 +14,7 @@ import type {
 } from "../interfaces/manualdelivery.interface.js";
 import {
     MANUAL_DELIVERY_STATUS,
+    MANUAL_DELIVERY_PAYMENT_STATUS,
     TERMINAL_STATUSES,
 } from "../constants/manualdelivery.constants.js";
 
@@ -782,6 +783,37 @@ export class ManualDeliveryRepository {
         return (await ManualDeliveryModel.findByIdAndUpdate(objId, updateDoc, {
             new: true,
         })) as unknown as IManualDeliveryDocument | null;
+    }
+
+    /**
+     * Marks a manual delivery as paid with payment transaction reference.
+     */
+    async markPaid(
+        deliveryId: string | Types.ObjectId,
+        transactionId: string | Types.ObjectId,
+        paymentMethodId?: string | Types.ObjectId
+    ): Promise<IManualDeliveryDocument | null> {
+        const objId = new Types.ObjectId(deliveryId.toString());
+        const update: Record<string, any> = {
+            paymentStatus: MANUAL_DELIVERY_PAYMENT_STATUS.PAID,
+            paymentTransaction: new Types.ObjectId(transactionId.toString()),
+            paidAt: new Date(),
+        };
+
+        if (paymentMethodId && Types.ObjectId.isValid(paymentMethodId.toString())) {
+            update.paymentMethod = new Types.ObjectId(paymentMethodId.toString());
+        }
+
+        return (await ManualDeliveryModel.findByIdAndUpdate(
+            objId,
+            { $set: update },
+            { new: true }
+        )
+            .populate("vendor", "firstName lastName mobileNumber email")
+            .populate("vendorProfile", "storeName storeLocationAddress storeLogo")
+            .populate("driver", "vehicleType vehicleNumber profileStatus isOnline")
+            .populate("driverUser", "firstName lastName mobileNumber")
+            .populate("createdBy", "firstName lastName email role")) as unknown as IManualDeliveryDocument | null;
     }
 }
 

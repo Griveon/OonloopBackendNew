@@ -43,6 +43,18 @@ paymentTransactionsRoutes.post(
     controller.verifyBuyForMe
 );
 
+paymentTransactionsRoutes.post(
+    "/createmanualdelivery",
+    authMiddleware,
+    controller.createManualDeliveryTransaction
+);
+
+paymentTransactionsRoutes.post(
+    "/verifymanualdelivery",
+    authMiddleware,
+    controller.verifyManualDelivery
+);
+
 paymentTransactionsRoutes.get("/getall", authMiddleware, controller.getAll);
 
 paymentTransactionsRoutes.post("/verify", authMiddleware, controller.verify);

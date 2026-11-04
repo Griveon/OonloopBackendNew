@@ -59,6 +59,13 @@ manualDeliveryRoutes.get(
     controller.getById
 );
 
+// Get delivery pricing summary
+manualDeliveryRoutes.get(
+    "/:id/summary",
+    authMiddleware,
+    controller.getSummary
+);
+
 // Update eligible delivery fields (when CREATED)
 manualDeliveryRoutes.patch(
     "/:id",

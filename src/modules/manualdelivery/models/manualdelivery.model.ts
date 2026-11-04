@@ -4,6 +4,7 @@ import type {
 } from "../interfaces/manualdelivery.interface.js";
 import {
     MANUAL_DELIVERY_STATUS,
+    MANUAL_DELIVERY_PAYMENT_STATUS,
     MANUAL_DELIVERY_SOURCE,
     DISTANCE_CALCULATION_METHOD,
     MANUAL_DELIVERY_ASSIGNMENT_ACTION,
@@ -231,6 +232,56 @@ const distanceSchema = new Schema(
     { _id: false }
 );
 
+const pricingSchema = new Schema(
+    {
+        distanceKm: {
+            type: Number,
+            default: null,
+        },
+        deliveryFee: {
+            type: Number,
+            default: 0,
+        },
+        platformFee: {
+            type: Number,
+            default: 0,
+        },
+        deliveryGst: {
+            type: Number,
+            default: 0,
+        },
+        platformGst: {
+            type: Number,
+            default: 0,
+        },
+        totalDeliveryCharge: {
+            type: Number,
+            default: 0,
+        },
+        totalPlatformCharge: {
+            type: Number,
+            default: 0,
+        },
+        subtotal: {
+            type: Number,
+            default: 0,
+        },
+        gstRate: {
+            type: Number,
+            default: 18,
+        },
+        gstAmount: {
+            type: Number,
+            default: 0,
+        },
+        totalAmount: {
+            type: Number,
+            default: 0,
+        },
+    },
+    { _id: false }
+);
+
 const driverSnapshotSchema = new Schema(
     {
         driverId: {
@@ -398,6 +449,48 @@ const ManualDeliverySchema: Schema<IManualDeliveryDocument> =
                     provider: null,
                     calculatedAt: null,
                 }),
+            },
+
+            pricing: {
+                type: pricingSchema,
+                default: () => ({
+                    distanceKm: null,
+                    deliveryFee: 0,
+                    platformFee: 0,
+                    deliveryGst: 0,
+                    platformGst: 0,
+                    totalDeliveryCharge: 0,
+                    totalPlatformCharge: 0,
+                    subtotal: 0,
+                    gstRate: 18,
+                    gstAmount: 0,
+                    totalAmount: 0,
+                }),
+            },
+
+            paymentStatus: {
+                type: String,
+                enum: Object.values(MANUAL_DELIVERY_PAYMENT_STATUS),
+                default: MANUAL_DELIVERY_PAYMENT_STATUS.PENDING,
+                index: true,
+            },
+
+            paymentMethod: {
+                type: Schema.Types.ObjectId,
+                ref: "PaymentMethod",
+                default: null,
+            },
+
+            paymentTransaction: {
+                type: Schema.Types.ObjectId,
+                ref: "PaymentTransaction",
+                default: null,
+                index: true,
+            },
+
+            paidAt: {
+                type: Date,
+                default: null,
             },
 
             driverModel: {

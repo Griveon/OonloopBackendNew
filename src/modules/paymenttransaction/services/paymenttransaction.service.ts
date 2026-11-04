@@ -11,16 +11,21 @@ import { FirebaseTokenService } from "../../notification/services/firebasetoken.
 import mongoose from "mongoose";
 import { CartModel } from "../../cart/models/cart.model.js";
 import { recordOrderSales } from "../../order/services/ordersales.service.js";
+import { UserModel } from "../../user/models/user.model.js";
+import { ManualDeliveryNotificationService } from "../../manualdelivery/services/manualdelivery-notification.service.js";
+import { calculateManualDeliveryPricing } from "../../manualdelivery/constants/manualdelivery.constants.js";
 
 export class PaymentTransactionService {
     private repo: PaymentTransactionRepository;
     private subscriptionService: VendorSubscriptionService;
     private firebaseTokenService: FirebaseTokenService;
+    private manualDeliveryNotificationService: ManualDeliveryNotificationService;
 
     constructor() {
         this.repo = new PaymentTransactionRepository();
         this.subscriptionService = new VendorSubscriptionService();
         this.firebaseTokenService = new FirebaseTokenService();
+        this.manualDeliveryNotificationService = new ManualDeliveryNotificationService();
     }
 
     async createTransaction(data: any) {
@@ -714,6 +719,277 @@ export class PaymentTransactionService {
         };
     }
 
+    async createManualDeliveryTransaction(data: any) {
+        const {
+            paymentMethod,
+            providerConnection,
+            manualDeliveryId,
+            currency,
+            userId,
+        } = data;
+
+        if (!manualDeliveryId || !userId) {
+            throw new Error("Missing required fields: manualDeliveryId and userId are required");
+        }
+
+        const delivery: any = await this.repo.findManualDeliveryById(manualDeliveryId);
+        if (!delivery) {
+            throw new Error("Manual delivery not found");
+        }
+
+        if (delivery.paymentStatus === "paid") {
+            throw new Error("Manual delivery already paid");
+        }
+
+        // Authorize: vendor owner or admin
+        const isOwner = delivery.vendor?.toString() === userId.toString();
+        const user = await UserModel.findById(userId);
+        const isAdmin =
+            user?.role === "admin" ||
+            (Array.isArray((user as any)?.roles) && (user as any)?.roles.includes("admin"));
+
+        if (!isOwner && !isAdmin) {
+            throw new Error("Not authorized to pay for this manual delivery");
+        }
+
+        // Server-authoritative amount from distance-based pricing
+        let totalRupees = Number(delivery.pricing?.totalAmount || 0);
+        if (!totalRupees || totalRupees <= 0) {
+            const pricing = calculateManualDeliveryPricing(delivery.distance?.valueKm);
+            delivery.pricing = pricing;
+            totalRupees = pricing.totalAmount;
+            await delivery.save();
+        }
+
+        const amountInPaise = Math.round(totalRupees * 100);
+        if (amountInPaise <= 0) {
+            throw new Error("Invalid manual delivery payable amount");
+        }
+
+        // Resolve PaymentMethod
+        let method: any = null;
+        if (paymentMethod) {
+            method = await PaymentMethodModel.findById(paymentMethod);
+        } else {
+            method = await PaymentMethodModel.findOne({
+                type: "online",
+                isActive: true,
+                isDeleted: false,
+            });
+        }
+
+        if (!method || method.isDeleted || !method.isActive) {
+            throw new Error("Invalid payment method");
+        }
+
+        // ----- DEV-ONLY demo payment: no gateway; confirmed at /verifymanualdelivery -----
+        if ((method as any).isDemo) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+            const stamp = Date.now();
+            const txn = await this.repo.create({
+                paymentMethod: method._id,
+                amount: amountInPaise / 100,
+                currency: currency || "INR",
+                externalOrderId: `DEMO-${stamp}`,
+                status: "pending",
+                metadata: {
+                    userId,
+                    manualDeliveryId,
+                    type: "manual_delivery",
+                    demo: true,
+                },
+            });
+
+            return {
+                orderId: `DEMO-${stamp}`,
+                amount: amountInPaise,
+                currency: currency || "INR",
+                key: "demo",
+                transactionId: txn._id,
+                demo: true,
+            };
+        }
+
+        if (method.type !== "online") {
+            throw new Error("Only online payments allowed");
+        }
+
+        // Resolve ProviderConnection
+        let provider: any = null;
+        if (providerConnection) {
+            provider = await ProviderConnectionModel.findById(providerConnection);
+        } else {
+            provider = await ProviderConnectionModel.findOne({
+                provider: "razorpay",
+                isActive: true,
+                isDeleted: false,
+            });
+        }
+
+        if (!provider || provider.isDeleted || !provider.isActive) {
+            throw new Error("Invalid provider connection");
+        }
+
+        if (provider.provider !== "razorpay") {
+            throw new Error("Unsupported provider");
+        }
+
+        const keyIdEncrypted = provider.credentials.get("keyId");
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keyIdEncrypted || !keySecretEncrypted) {
+            throw new Error("Payment provider credentials not configured properly");
+        }
+
+        const keyId = provider.decryptValue(keyIdEncrypted);
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+
+        const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+
+        const order = await razorpay.orders.create({
+            amount: amountInPaise,
+            currency: currency || "INR",
+            receipt: `mdel_${Date.now()}`,
+        });
+
+        const transaction = await this.repo.create({
+            paymentMethod: method._id,
+            providerConnection: provider._id,
+            amount: amountInPaise / 100,
+            currency: currency || "INR",
+            externalOrderId: order.id,
+            status: "pending",
+            metadata: {
+                userId,
+                manualDeliveryId,
+                type: "manual_delivery",
+            },
+        });
+
+        return {
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            key: keyId,
+            transactionId: transaction._id,
+        };
+    }
+
+    async verifyManualDeliveryPayment(data: any) {
+        const {
+            transactionId,
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+        } = data;
+
+        if (!transactionId) {
+            throw new Error("Missing payment verification fields: transactionId is required");
+        }
+
+        const transaction: any = await this.repo.findById(transactionId);
+        if (!transaction) {
+            throw new Error("Transaction not found");
+        }
+
+        if (transaction.status === "success") {
+            const { manualDeliveryId } = transaction.metadata || {};
+            return {
+                success: true,
+                alreadyProcessed: true,
+                message: "Manual delivery payment already verified",
+                deliveryId: manualDeliveryId,
+            };
+        }
+
+        const { manualDeliveryId } = transaction.metadata || {};
+        if (!manualDeliveryId) {
+            throw new Error("Missing transaction metadata: manualDeliveryId");
+        }
+
+        const delivery: any = await this.repo.findManualDeliveryById(manualDeliveryId);
+        if (!delivery) {
+            throw new Error("Manual delivery not found");
+        }
+
+        // ----- DEV-ONLY demo: confirm without signature check -----
+        if ((transaction.metadata as any)?.demo === true) {
+            if (process.env.ALLOW_DEMO_PAYMENT !== "true") {
+                throw new Error("Demo payment is not enabled");
+            }
+
+            const demoPaymentId = razorpay_payment_id || `DEMO-PAY-${Date.now()}`;
+            await this.repo.markSuccess(transactionId, demoPaymentId);
+            const updatedDelivery: any = await this.repo.markManualDeliveryPaid(
+                manualDeliveryId,
+                transactionId,
+                transaction.paymentMethod
+            );
+
+            // Broadcast notification to available drivers
+            void this.manualDeliveryNotificationService.notifyDriversNewAvailableDelivery(
+                updatedDelivery || delivery
+            );
+
+            return {
+                success: true,
+                message: "Payment verified & manual delivery confirmed",
+                deliveryId: delivery._id,
+            };
+        }
+
+        if (!razorpay_payment_id || !razorpay_signature) {
+            throw new Error("Missing payment verification fields");
+        }
+
+        if (transaction.externalOrderId !== razorpay_order_id) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Order ID mismatch");
+        }
+
+        const provider = await ProviderConnectionModel.findById(transaction.providerConnection);
+        if (!provider) {
+            throw new Error("Provider not found");
+        }
+
+        const keySecretEncrypted = provider.credentials.get("keySecret");
+        if (!keySecretEncrypted) {
+            throw new Error("Key secret missing");
+        }
+
+        const keySecret = provider.decryptValue(keySecretEncrypted);
+
+        const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+        const expectedSignature = crypto
+            .createHmac("sha256", keySecret)
+            .update(body)
+            .digest("hex");
+
+        if (expectedSignature !== razorpay_signature) {
+            await this.repo.markFailed(transactionId);
+            throw new Error("Invalid payment signature");
+        }
+
+        await this.repo.markSuccess(transactionId, razorpay_payment_id);
+        const updatedDelivery: any = await this.repo.markManualDeliveryPaid(
+            manualDeliveryId,
+            transactionId,
+            transaction.paymentMethod
+        );
+
+        // Broadcast notification to available drivers
+        void this.manualDeliveryNotificationService.notifyDriversNewAvailableDelivery(
+            updatedDelivery || delivery
+        );
+
+        return {
+            success: true,
+            message: "Payment verified & manual delivery confirmed",
+            deliveryId: delivery._id,
+        };
+    }
+
     async verifyPayment(data: any) {
         const {
             transactionId,
@@ -1246,6 +1522,25 @@ export class PaymentTransactionService {
                 success: true,
                 ignored: true,
                 message: `Payment status is ${payment.status || "unknown"}`,
+            };
+        }
+
+        if (transaction.metadata?.type === "manual_delivery") {
+            const { manualDeliveryId } = transaction.metadata || {};
+            await this.repo.markSuccess(transaction._id.toString(), payment.id);
+            const updatedDelivery: any = await this.repo.markManualDeliveryPaid(
+                manualDeliveryId,
+                transaction._id.toString(),
+                transaction.paymentMethod
+            );
+            const delivery = await this.repo.findManualDeliveryById(manualDeliveryId);
+            void this.manualDeliveryNotificationService.notifyDriversNewAvailableDelivery(
+                updatedDelivery || delivery
+            );
+            return {
+                success: true,
+                message: "Manual delivery payment verified via webhook",
+                deliveryId: manualDeliveryId,
             };
         }
 
