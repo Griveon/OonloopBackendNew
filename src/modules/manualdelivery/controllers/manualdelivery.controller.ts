@@ -92,7 +92,7 @@ export class ManualDeliveryController {
     getSummary = async (req: Request, res: Response) => {
         try {
             const userId = this.getUserId(req);
-            const deliveryId = this.getParamId(req.params.id);
+            const deliveryId = this.getParamId(req);
             const summary = await this.service.getDeliverySummary(
                 deliveryId,
                 userId
