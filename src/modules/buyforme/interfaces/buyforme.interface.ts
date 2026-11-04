@@ -40,7 +40,12 @@ export interface IBuyForMeRequest {
     requestNumber: string;
 
     sourceMode: "no_preference" | "oonloop_store" | "named_store";
-    preferredStore?: { storeId?: Types.ObjectId; storeName?: string };
+    preferredStore?: {
+        storeId?: Types.ObjectId;
+        storeName?: string;
+        storeAddress?: string;
+        storeLocation?: IGeoPoint;
+    };
     radiusKm: number;
 
     delivery?: IBuyForMeDelivery;

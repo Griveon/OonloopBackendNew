@@ -1,12 +1,31 @@
 import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { authMiddleware } from "../../../middlewares/authmiddleware/auth.middleware.js";
+import { ResponseUtil } from "../../../utils/response.util.js";
+import { buyForMeImageUpload } from "../config/buyformeupload.config.js";
 import { BuyForMeController } from "../controllers/buyforme.controller.js";
 
 const buyForMeRoutes = Router();
 const c = new BuyForMeController();
 
+// Single "image" upload with clean 400s for size/type errors.
+const imageUpload = (req: Request, res: Response, next: NextFunction) =>
+    buyForMeImageUpload.single("image")(req, res, (err: any) => {
+        if (err) {
+            const msg =
+                err.code === "LIMIT_FILE_SIZE"
+                    ? "Image must be 5 MB or smaller"
+                    : err.message || "Upload failed";
+            return res.status(400).json(ResponseUtil.badRequest(msg));
+        }
+        next();
+    });
+
 // public info
 buyForMeRoutes.get("/pricing", c.getPricing);
+
+// shopping-list image upload -> { url } for an "uploaded" item
+buyForMeRoutes.post("/upload-image", authMiddleware, imageUpload, c.uploadImage);
 
 // customer: build the request
 buyForMeRoutes.post("/draft", authMiddleware, c.draft);

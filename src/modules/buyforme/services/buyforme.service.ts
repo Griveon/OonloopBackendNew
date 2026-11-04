@@ -1,7 +1,8 @@
 import { BuyForMeRepository } from "../repositories/buyforme.repository.js";
 import { ProductModel } from "../../product/models/product.model.js";
 import { UserModel } from "../../user/models/user.model.js";
-import { BFM_PRICING, BFM_SOURCE_MODES } from "../constants/buyforme.constants.js";
+import { BFM_PRICING, BFM_SOURCE_MODES, BFM_SERVICE_AREA } from "../constants/buyforme.constants.js";
+import { haversineKm } from "../../personalshopper/utils/personalshopper.util.js";
 import { emitRideRequest, emitRideTaken } from "../../../config/socket.js";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -24,6 +25,14 @@ export class BuyForMeService {
             serviceFee: BFM_PRICING.SERVICE_FEE,
             gstPercent: BFM_PRICING.GST_PERCENT,
             defaultRadiusKm: BFM_PRICING.DEFAULT_RADIUS_KM,
+            // Service area the app uses to validate a chosen store (instead of
+            // hardcoding) — change here to move the area without an app update.
+            serviceArea: {
+                name: BFM_SERVICE_AREA.name,
+                lat: BFM_SERVICE_AREA.lat,
+                lng: BFM_SERVICE_AREA.lng,
+                radiusKm: BFM_SERVICE_AREA.radiusKm,
+            },
             notes: [
                 "We will purchase your items within this budget.",
                 "Any unused amount will be refunded.",
@@ -117,13 +126,39 @@ export class BuyForMeService {
     }
 
     async setPreferredStore(requestId: string, userId: string, data: any) {
-        await this.loadOwned(requestId, userId);
+        const req = await this.loadOwned(requestId, userId);
+        // The store can only be chosen while building the request (pre-payment).
+        if (req.status !== "draft") {
+            throw new Error("Store can only be changed before the request is submitted");
+        }
+
         const sourceMode = BFM_SOURCE_MODES.includes(data.sourceMode) ? data.sourceMode : "no_preference";
-        const patch: any = { sourceMode };
-        patch.preferredStore = {
+
+        const preferredStore: any = {
             ...(data.storeId ? { storeId: data.storeId } : {}),
             ...(data.storeName ? { storeName: data.storeName } : {}),
+            ...(data.storeAddress ? { storeAddress: data.storeAddress } : {}),
         };
+
+        // If an actual store location is given, it must be inside the service area.
+        if (data.storeLocation !== undefined && data.storeLocation !== null) {
+            const { lat, lng } = data.storeLocation;
+            if (typeof lat !== "number" || typeof lng !== "number") {
+                throw new Error("storeLocation.lat and lng must be numbers");
+            }
+            const distanceKm = haversineKm(
+                { lat: BFM_SERVICE_AREA.lat, lng: BFM_SERVICE_AREA.lng },
+                { lat, lng }
+            );
+            if (distanceKm > BFM_SERVICE_AREA.radiusKm) {
+                throw new Error(
+                    `Shop must be within ${BFM_SERVICE_AREA.radiusKm} km of ${BFM_SERVICE_AREA.name}`
+                );
+            }
+            preferredStore.storeLocation = { lat, lng };
+        }
+
+        const patch: any = { sourceMode, preferredStore };
         if (data.radiusKm) patch.radiusKm = Number(data.radiusKm);
         await this.repo.updateById(requestId, patch);
         return this.getRequest(requestId, userId);
@@ -187,6 +222,18 @@ export class BuyForMeService {
 
         const itemCount = await this.repo.countItems(requestId);
         if (itemCount === 0) throw new Error("Add at least one item");
+
+        // Items outside the catalog need a real shop; a typed name has no location.
+        const offCatalogCount = await this.repo.countOffCatalogItems(requestId);
+        const location = req.preferredStore?.storeLocation;
+        const hasMapShop =
+            req.sourceMode === "named_store" &&
+            typeof location?.lat === "number" &&
+            typeof location?.lng === "number";
+        if (offCatalogCount > 0 && !hasMapShop) {
+            throw new Error("Choose a shop on the map for items not on Oonloop");
+        }
+
         if (!req.budget || req.budget <= 0) throw new Error("Set a shopping budget first");
         if (!req.delivery?.mobileNumber) throw new Error("Delivery details are required");
 

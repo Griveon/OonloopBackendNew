@@ -87,6 +87,14 @@ export class BuyForMeRepository {
         return BuyForMeItemModel.countDocuments({ request: requestId });
     }
 
+    // Typed and uploaded items — the ones not in our catalog.
+    async countOffCatalogItems(requestId: string) {
+        return BuyForMeItemModel.countDocuments({
+            request: requestId,
+            source: { $in: ["typed", "uploaded"] },
+        });
+    }
+
     // ----- shopper offer/accept (mirror personalshopper) -----
     async findOpenRequests() {
         return BuyForMeRequestModel.find({

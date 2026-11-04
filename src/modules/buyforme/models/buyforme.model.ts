@@ -42,6 +42,11 @@ const buyForMeSchema = new Schema<IBuyForMeRequestDocument>(
         preferredStore: {
             storeId: { type: Schema.Types.ObjectId, ref: "VendorProfile" },
             storeName: { type: String, trim: true },
+            storeAddress: { type: String, trim: true },
+            storeLocation: {
+                lat: { type: Number },
+                lng: { type: Number },
+            },
         },
         radiusKm: { type: Number, default: 3 },
 

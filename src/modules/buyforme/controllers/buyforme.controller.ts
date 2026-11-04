@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { ResponseUtil } from "../../../utils/response.util.js";
 import { BuyForMeService } from "../services/buyforme.service.js";
+import { uploadToR2 } from "../../vendorprofile/utils/vendorprofile.util.js";
 
 export class BuyForMeController {
     private service = new BuyForMeService();
@@ -12,6 +13,24 @@ export class BuyForMeController {
     // GET /buyforme/pricing (public)
     getPricing = (_req: Request, res: Response) =>
         res.status(200).json(ResponseUtil.success("Pricing", this.service.getPricing()));
+
+    // POST /buyforme/upload-image  (auth) — multipart "image" → { url }
+    uploadImage = async (req: Request, res: Response) => {
+        try {
+            const file = (req as any).file as Express.Multer.File | undefined;
+            if (!file) {
+                return res
+                    .status(400)
+                    .json(ResponseUtil.badRequest("Image file is required"));
+            }
+            const url = await uploadToR2(file, "buyforme/lists");
+            return res
+                .status(201)
+                .json(ResponseUtil.created("Image uploaded successfully", { url }));
+        } catch (e: any) {
+            return res.status(500).json(ResponseUtil.serverError(e.message));
+        }
+    };
 
     // POST /buyforme/draft
     draft = async (req: Request, res: Response) => {

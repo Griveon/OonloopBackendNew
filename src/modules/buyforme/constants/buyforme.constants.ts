@@ -10,6 +10,14 @@ export const BFM_PRICING = {
     DEFAULT_RADIUS_KM: 3,
 } as const;
 
+// Service area — a chosen/named store must be within this radius.
+export const BFM_SERVICE_AREA = {
+    name: "Urapakkam",
+    lat: 12.8694306,
+    lng: 80.0722306,
+    radiusKm: 5,
+} as const;
+
 export const BFM_SOURCE_MODES = [
     "no_preference",
     "oonloop_store",
